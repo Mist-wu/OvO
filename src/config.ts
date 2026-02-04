@@ -12,6 +12,14 @@ function optionalNumberFromEnv(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function booleanFromEnv(value: string | undefined, fallback = false): boolean {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
 const napcatPort = numberFromEnv(process.env.NAPCAT_PORT, 3001);
 const napcatPath = process.env.NAPCAT_WS_PATH ?? "/ws";
@@ -31,5 +39,17 @@ export const config = {
   targetQq: optionalNumberFromEnv(process.env.NAPCAT_TARGET_QQ),
   scheduler: {
     intervalMs: numberFromEnv(process.env.SCHEDULE_INTERVAL_MS, 60000),
+  },
+  welcome: {
+    enabled: booleanFromEnv(process.env.WELCOME_ENABLED, false),
+    message: process.env.WELCOME_MESSAGE ?? "欢迎 {user_id} 入群",
+  },
+  pokeReply: {
+    enabled: booleanFromEnv(process.env.POKE_REPLY_ENABLED, false),
+    message: process.env.POKE_REPLY_MESSAGE ?? "别戳啦~",
+  },
+  requests: {
+    autoApproveGroup: booleanFromEnv(process.env.AUTO_APPROVE_GROUP_REQUESTS, false),
+    autoApproveFriend: booleanFromEnv(process.env.AUTO_APPROVE_FRIEND_REQUESTS, false),
   },
 };

@@ -6,7 +6,9 @@
 ## Current status
 - Base TypeScript config in place (pnpm, tsconfig, dotenv)
 - WS adapter ready: connect/reconnect/heartbeat, event handler, schedule loop
-- Minimal command: `/ping` replies with `pong` (private/group)
+- Commands: `/ping`, `/echo <text>`, `/help` (private/group)
+- Notice/request/meta_event handling with logging
+- Config toggles for welcome, poke reply, auto-approve group/friend requests
 - WS connection verified locally with `pnpm run dev`
 
 ## Repo layout
@@ -23,6 +25,9 @@
 - Bot config options:
   - `NAPCAT_WS_URL=ws://<host>:<port>[/?access_token=...]`
   - `NAPCAT_TOKEN` or `NAPCAT_ACCESS_TOKEN` (sends `Authorization: Bearer ...`)
+  - `WELCOME_ENABLED`, `WELCOME_MESSAGE`
+  - `POKE_REPLY_ENABLED`, `POKE_REPLY_MESSAGE`
+  - `AUTO_APPROVE_GROUP_REQUESTS`, `AUTO_APPROVE_FRIEND_REQUESTS`
 
 ## Run
 1. `pnpm install`
@@ -30,6 +35,5 @@
 3. `pnpm run dev`
 
 ## Next steps
-- Expand event handling
 - Add richer message/action helpers
 - Add queue/worker when needed
