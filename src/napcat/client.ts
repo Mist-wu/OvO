@@ -4,6 +4,7 @@ import WebSocket from "ws";
 import { config } from "../config";
 import { scheduleLoop } from "../utils/schedule_tasks";
 import { handleEvent } from "./handlers";
+import { normalizeMessage, type MessageInput } from "./message";
 
 type ActionResponse = {
   status?: string;
@@ -131,6 +132,29 @@ export class NapcatClient {
     });
   }
 
+  async sendMessage(options: {
+    userId?: number;
+    groupId?: number;
+    message: MessageInput;
+  }): Promise<ActionResponse> {
+    const { userId, groupId, message } = options;
+    const messageSegments = normalizeMessage(message);
+
+    if (typeof groupId === "number" && typeof userId === "number") {
+      throw new Error("sendMessage 只能设置 groupId 或 userId 之一");
+    }
+
+    if (typeof groupId === "number") {
+      return this.sendAction("send_group_msg", { group_id: groupId, message: messageSegments });
+    }
+
+    if (typeof userId === "number") {
+      return this.sendAction("send_private_msg", { user_id: userId, message: messageSegments });
+    }
+
+    throw new Error("sendMessage 需要 groupId 或 userId");
+  }
+
   async sendActionNoWait(
     action: string,
     params: Record<string, unknown> = {},
@@ -154,11 +178,11 @@ export class NapcatClient {
   }
 
   sendPrivateText(userId: number, message: string): Promise<ActionResponse> {
-    return this.sendAction("send_private_msg", { user_id: userId, message });
+    return this.sendMessage({ userId, message });
   }
 
   sendGroupText(groupId: number, message: string): Promise<ActionResponse> {
-    return this.sendAction("send_group_msg", { group_id: groupId, message });
+    return this.sendMessage({ groupId, message });
   }
 
   private async onMessage(data: WebSocket.RawData): Promise<void> {
