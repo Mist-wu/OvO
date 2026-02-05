@@ -5,4 +5,5 @@ dist/
 !.env.example
 .DS_Store
 logs/
-docs/
+context/
+me_doc/

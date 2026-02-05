@@ -19,6 +19,16 @@
 - `src/napcat/handlers.ts` (event handling)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
 
+## Docs
+- NapCat API: `context/napcat_api.md` (when writing NapCat adapters, consult this doc proactively)
+
+## NapCat 适配策略
+- 以 OneBot v11 事件/动作字段为准，优先查 `context/napcat_api.md`，不要凭记忆硬编码字段名。
+- 事件分发以 `post_type` 为入口，分别处理 `message` / `notice` / `request` / `meta_event`，对字段缺失保持容错。
+- 消息发送统一走 action 封装（如 `send_msg`），传入 `message` 段数组；私聊/群聊根据 `user_id`/`group_id` 自动选择。
+- 需要回复/引用时使用 `reply` 消息段或 `message_id`（依文档），不要拼装原始文本。
+- 所有 action 返回需检查 `status`/`retcode` 并记录失败原因，必要时重试或降级为日志提示。
+
 ## Config (NapCat WS forward)
 - Enable OneBot v11 WebSocket server in NapCat
 - Set host/port and (optional) access token
