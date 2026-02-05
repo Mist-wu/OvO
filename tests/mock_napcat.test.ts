@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import WebSocket, { WebSocketServer } from "ws";
@@ -147,6 +150,24 @@ function decodeMessage(data: WebSocket.RawData): string {
   return Buffer.from(data).toString();
 }
 
+function messageToText(message: unknown): string {
+  if (typeof message === "string") return message;
+  if (Array.isArray(message)) {
+    return message
+      .map((segment) => {
+        if (!segment || typeof segment !== "object") return "";
+        const type = (segment as { type?: string }).type;
+        if (type !== "text") return "";
+        const data = (segment as { data?: { text?: unknown } }).data;
+        const textValue = data?.text;
+        return typeof textValue === "string" ? textValue : "";
+      })
+      .join("")
+      .trim();
+  }
+  return "";
+}
+
 async function runTest(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -172,10 +193,16 @@ async function waitForClientOpen(client: unknown, timeoutMs = 1000) {
 
 async function main() {
   const server = await createMockServer();
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-"));
   process.env.NAPCAT_WS_URL = `ws://127.0.0.1:${server.port}`;
   process.env.NAPCAT_ACTION_TIMEOUT_MS = "200";
   process.env.NAPCAT_ACTION_LOG_ENABLED = "false";
   process.env.SCHEDULE_INTERVAL_MS = "600000";
+  process.env.BOT_CONFIG_PATH = path.join(tmpDir, "config.json");
+  process.env.BOT_ADMINS = "11111";
+  process.env.BOT_WHITELIST = "";
+  process.env.GROUP_ENABLED_DEFAULT = "true";
+  process.env.COMMAND_COOLDOWN_MS = "0";
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();
@@ -208,7 +235,7 @@ async function main() {
       const action = await server.waitForAction(
         (item) => item.action === "send_private_msg" && item.params.user_id === 12345,
       );
-      assert.equal(action.params.message, "pong");
+      assert.equal(messageToText(action.params.message), "pong");
     });
 
     await runTest("group /echo via message segments", async () => {
@@ -239,7 +266,7 @@ async function main() {
       const action = await server.waitForAction(
         (item) => item.action === "send_group_msg" && item.params.group_id === 54321,
       );
-      assert.equal(action.params.message, "hello");
+      assert.equal(messageToText(action.params.message), "hello");
     });
 
     await runTest("raw_message /help fallback works", async () => {
@@ -261,7 +288,191 @@ async function main() {
       const action = await server.waitForAction(
         (item) => item.action === "send_private_msg" && item.params.user_id === 22222,
       );
-      assert.equal(action.params.message, "/ping /echo <text> /help");
+      assert.equal(
+        messageToText(action.params.message),
+        "/ping /echo <text> /help /admin add|del <qq> /whitelist add|del <qq> /group on|off [group_id] /cooldown [ms]",
+      );
+    });
+
+    await runTest("admin manages whitelist and access control", async () => {
+      server.actions.length = 0;
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/whitelist add 33333",
+      });
+
+      const added = await server.waitForAction(
+        (item) => item.action === "send_private_msg" && item.params.user_id === 11111,
+      );
+      assert.equal(messageToText(added.params.message), "已添加白名单 33333");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/ping",
+      });
+
+      const denied = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "无权限",
+      );
+      assert.equal(messageToText(denied.params.message), "无权限");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 33333,
+        self_id: 99999,
+        message: "/ping",
+      });
+
+      const allowed = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 33333 &&
+          messageToText(item.params.message) === "pong",
+      );
+      assert.equal(messageToText(allowed.params.message), "pong");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/whitelist del 33333",
+      });
+
+      const removed = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === "已移除白名单 33333",
+      );
+      assert.equal(messageToText(removed.params.message), "已移除白名单 33333");
+    });
+
+    await runTest("group switch blocks commands", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 54321,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/group off",
+      });
+
+      const disabled = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 54321 &&
+          messageToText(item.params.message) === "已关闭群 54321",
+      );
+      assert.equal(messageToText(disabled.params.message), "已关闭群 54321");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 54321,
+        user_id: 22222,
+        self_id: 99999,
+        message: "/ping",
+      });
+
+      const blocked = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 54321 &&
+          messageToText(item.params.message) === "本群已关闭",
+      );
+      assert.equal(messageToText(blocked.params.message), "本群已关闭");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 54321,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/group on",
+      });
+
+      const enabled = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 54321 &&
+          messageToText(item.params.message) === "已开启群 54321",
+      );
+      assert.equal(messageToText(enabled.params.message), "已开启群 54321");
+    });
+
+    await runTest("cooldown limits repeated commands", async () => {
+      server.actions.length = 0;
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/cooldown 200",
+      });
+
+      const setCooldown = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === "已设置冷却时间 200ms",
+      );
+      assert.equal(messageToText(setCooldown.params.message), "已设置冷却时间 200ms");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 12345,
+        self_id: 99999,
+        message: "/ping",
+      });
+
+      const first = await server.waitForAction(
+        (item) => item.action === "send_private_msg" && item.params.user_id === 12345,
+      );
+      assert.equal(messageToText(first.params.message), "pong");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 12345,
+        self_id: 99999,
+        message: "/ping",
+      });
+
+      const cooldownHit = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 12345 &&
+          messageToText(item.params.message).startsWith("冷却中"),
+      );
+      assert.equal(true, messageToText(cooldownHit.params.message).startsWith("冷却中"));
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/cooldown 0",
+      });
+
+      const resetCooldown = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === "已设置冷却时间 0ms",
+      );
+      assert.equal(messageToText(resetCooldown.params.message), "已设置冷却时间 0ms");
     });
 
     await runTest("action timeout rejects", async () => {

@@ -29,6 +29,14 @@ function actionLogLevelFromEnv(value: string | undefined, fallback = "info"): Ac
   return fallback;
 }
 
+function numberListFromEnv(value: string | undefined): number[] {
+  if (!value) return [];
+  return value
+    .split(/[\s,]+/)
+    .map((item) => Number(item))
+    .filter((item) => Number.isSafeInteger(item) && item > 0);
+}
+
 type ActionLogLevel = "error" | "warn" | "info" | "debug";
 
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
@@ -67,5 +75,12 @@ export const config = {
   requests: {
     autoApproveGroup: booleanFromEnv(process.env.AUTO_APPROVE_GROUP_REQUESTS, false),
     autoApproveFriend: booleanFromEnv(process.env.AUTO_APPROVE_FRIEND_REQUESTS, false),
+  },
+  permissions: {
+    admins: numberListFromEnv(process.env.BOT_ADMINS),
+    whitelist: numberListFromEnv(process.env.BOT_WHITELIST),
+    groupEnabledDefault: booleanFromEnv(process.env.GROUP_ENABLED_DEFAULT, true),
+    cooldownMs: numberFromEnv(process.env.COMMAND_COOLDOWN_MS, 0),
+    configPath: process.env.BOT_CONFIG_PATH?.trim() || "data/bot_config.json",
   },
 };
