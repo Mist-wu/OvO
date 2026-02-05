@@ -20,6 +20,17 @@ function booleanFromEnv(value: string | undefined, fallback = false): boolean {
   return fallback;
 }
 
+function actionLogLevelFromEnv(value: string | undefined, fallback = "info"): ActionLogLevel {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "error" || normalized === "warn" || normalized === "info" || normalized === "debug") {
+    return normalized;
+  }
+  return fallback;
+}
+
+type ActionLogLevel = "error" | "warn" | "info" | "debug";
+
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
 const napcatPort = numberFromEnv(process.env.NAPCAT_PORT, 3001);
 const napcatPath = process.env.NAPCAT_WS_PATH ?? "/ws";
@@ -35,6 +46,11 @@ export const config = {
     token: napcatToken,
     reconnectMs: numberFromEnv(process.env.NAPCAT_RECONNECT_MS, 1000),
     heartbeatTimeoutMs: numberFromEnv(process.env.NAPCAT_HEARTBEAT_TIMEOUT_MS, 15000),
+    actionTimeoutMs: numberFromEnv(process.env.NAPCAT_ACTION_TIMEOUT_MS, 10000),
+    actionLog: {
+      enabled: booleanFromEnv(process.env.NAPCAT_ACTION_LOG_ENABLED, true),
+      level: actionLogLevelFromEnv(process.env.NAPCAT_ACTION_LOG_LEVEL, "info"),
+    },
   },
   targetQq: optionalNumberFromEnv(process.env.NAPCAT_TARGET_QQ),
   scheduler: {

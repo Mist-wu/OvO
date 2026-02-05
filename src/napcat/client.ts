@@ -5,6 +5,26 @@ import { config } from "../config";
 import { scheduleLoop } from "../utils/schedule_tasks";
 import { handleEvent } from "./handlers";
 
+type ActionResponse = {
+  status?: string;
+  retcode?: number;
+  data?: unknown;
+  msg?: string;
+  wording?: string;
+  echo?: string;
+  [key: string]: unknown;
+};
+
+type ActionLogLevel = "error" | "warn" | "info" | "debug";
+
+type PendingAction = {
+  resolve: (response: ActionResponse) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  action: string;
+  startedAt: number;
+};
+
 export class NapcatClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -12,6 +32,7 @@ export class NapcatClient {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private lastPongAt = Date.now();
   private shuttingDown = false;
+  private pendingActions = new Map<string, PendingAction>();
 
   connect(): void {
     if (this.shuttingDown) return;
@@ -50,6 +71,7 @@ export class NapcatClient {
 
     ws.on("close", (code, reason) => {
       console.warn(`连接已关闭: ${code} ${reason.toString()}`);
+      this.failPendingActions(new Error(`WebSocket closed: ${code} ${reason.toString()}`));
       this.cleanup();
       this.scheduleReconnect();
     });
@@ -61,6 +83,7 @@ export class NapcatClient {
 
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
+    this.failPendingActions(new Error("WebSocket shutdown"));
     this.cleanup();
     if (this.ws) {
       this.ws.close(1000, "shutdown");
@@ -69,6 +92,46 @@ export class NapcatClient {
   }
 
   async sendAction(
+    action: string,
+    params: Record<string, unknown> = {},
+    echo: string = randomUUID(),
+  ): Promise<ActionResponse> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket 未连接");
+    }
+
+    const payload = { action, params, echo };
+    return new Promise<ActionResponse>((resolve, reject) => {
+      const timeoutMs = Math.max(1000, config.napcat.actionTimeoutMs);
+      const timer = setTimeout(() => {
+        this.pendingActions.delete(echo);
+        this.logAction(
+          "warn",
+          `[action] timeout action=${action} echo=${echo} cost=${timeoutMs}ms`,
+        );
+        reject(new Error(`[action] action=${action} timeout=${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.pendingActions.set(echo, {
+        resolve,
+        reject,
+        timer,
+        action,
+        startedAt: Date.now(),
+      });
+
+      ws.send(JSON.stringify(payload), (error) => {
+        if (error) {
+          clearTimeout(timer);
+          this.pendingActions.delete(echo);
+          reject(error);
+        }
+      });
+    });
+  }
+
+  async sendActionNoWait(
     action: string,
     params: Record<string, unknown> = {},
     echo: string = randomUUID(),
@@ -90,11 +153,11 @@ export class NapcatClient {
     });
   }
 
-  sendPrivateText(userId: number, message: string): Promise<void> {
+  sendPrivateText(userId: number, message: string): Promise<ActionResponse> {
     return this.sendAction("send_private_msg", { user_id: userId, message });
   }
 
-  sendGroupText(groupId: number, message: string): Promise<void> {
+  sendGroupText(groupId: number, message: string): Promise<ActionResponse> {
     return this.sendAction("send_group_msg", { group_id: groupId, message });
   }
 
@@ -121,8 +184,9 @@ export class NapcatClient {
       return;
     }
 
-    if ("echo" in event) {
-      console.debug("收到 action 回包:", event);
+    if ("echo" in event || ("status" in event && "retcode" in event)) {
+      this.handleActionResponse(event as ActionResponse);
+      return;
     }
   }
 
@@ -173,6 +237,95 @@ export class NapcatClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private handleActionResponse(response: ActionResponse): void {
+    const echo = typeof response.echo === "string" ? response.echo : undefined;
+    if (!echo) {
+      this.logAction("debug", "收到 action 回包(无 echo)", response);
+      return;
+    }
+
+    const pending = this.pendingActions.get(echo);
+    if (!pending) {
+      this.logAction("debug", "收到 action 回包(未匹配 echo)", response);
+      return;
+    }
+
+    clearTimeout(pending.timer);
+    this.pendingActions.delete(echo);
+    const costMs = Date.now() - pending.startedAt;
+
+    const okStatus = response.status ? response.status === "ok" : true;
+    const okRetcode = typeof response.retcode === "number" ? response.retcode === 0 : true;
+    if (okStatus && okRetcode) {
+      this.logAction(
+        "info",
+        `[action] ok action=${pending.action} echo=${echo} cost=${costMs}ms`,
+      );
+      pending.resolve(response);
+      return;
+    }
+
+    this.logAction(
+      "warn",
+      `[action] fail action=${pending.action} echo=${echo} cost=${costMs}ms`,
+    );
+    pending.reject(this.formatActionError(pending.action, response));
+  }
+
+  private logAction(level: ActionLogLevel, message: string, meta?: unknown): void {
+    if (!config.napcat.actionLog.enabled) return;
+    const threshold = this.getActionLogThreshold(config.napcat.actionLog.level);
+    const current = this.getActionLogThreshold(level);
+    if (current > threshold) return;
+
+    const args: [string, ...unknown[]] = meta === undefined ? [message] : [message, meta];
+    switch (level) {
+      case "error":
+        console.error(...args);
+        return;
+      case "warn":
+        console.warn(...args);
+        return;
+      case "info":
+        console.info(...args);
+        return;
+      case "debug":
+        console.debug(...args);
+    }
+  }
+
+  private getActionLogThreshold(level: ActionLogLevel): number {
+    switch (level) {
+      case "error":
+        return 0;
+      case "warn":
+        return 1;
+      case "info":
+        return 2;
+      case "debug":
+        return 3;
+    }
+  }
+
+  private formatActionError(action: string, response: ActionResponse): Error {
+    const parts = [`action=${action}`];
+    if (response.status !== undefined) parts.push(`status=${response.status}`);
+    if (response.retcode !== undefined) parts.push(`retcode=${response.retcode}`);
+    if (typeof response.msg === "string" && response.msg) parts.push(`msg=${response.msg}`);
+    if (typeof response.wording === "string" && response.wording) {
+      parts.push(`wording=${response.wording}`);
+    }
+    return new Error(`[action] ${parts.join(" ")}`);
+  }
+
+  private failPendingActions(error: Error): void {
+    for (const [echo, pending] of this.pendingActions.entries()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+      this.pendingActions.delete(echo);
     }
   }
 
