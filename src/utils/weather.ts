@@ -161,7 +161,7 @@ ${getWindEmoji(windSpeed)} 风况: ${windDir} ${windSpeed}
 💧 湿度: ${humidity}%
 🌬️ 空气质量: AQI ${aqi} ${getAqiEmoji(aqi)}
 
- 未来天气预报:
+📅 今日与未来四天天气预报:
 `;
 
     for (const day of forecast) {
