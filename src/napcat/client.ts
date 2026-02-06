@@ -26,6 +26,23 @@ type PendingAction = {
   startedAt: number;
 };
 
+type QueuedAction = {
+  action: string;
+  params: Record<string, unknown>;
+  baseEcho: string;
+  resolve: (response: ActionResponse) => void;
+  reject: (error: Error) => void;
+};
+
+type RuntimeStatus = {
+  connected: boolean;
+  reconnecting: boolean;
+  pendingActions: number;
+  queuedActions: number;
+  inFlightActions: number;
+  lastPongAt: number;
+};
+
 export class NapcatClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -34,6 +51,10 @@ export class NapcatClient {
   private lastPongAt = Date.now();
   private shuttingDown = false;
   private pendingActions = new Map<string, PendingAction>();
+  private actionQueue: QueuedAction[] = [];
+  private actionInFlight = 0;
+  private readonly actionQueueConcurrency = 1;
+  private readonly actionRetryDelayMs = 200;
 
   connect(): void {
     if (this.shuttingDown) return;
@@ -52,10 +73,11 @@ export class NapcatClient {
       console.log("连接成功，开始监听消息");
       this.startHeartbeat();
       this.scheduleTimer = scheduleLoop(this);
+      this.pumpActionQueue();
 
-      if (config.targetQq) {
+      if (typeof config.permissions.rootUserId === "number") {
         try {
-          await this.sendPrivateText(config.targetQq, "Bot成功启动");
+          await this.sendPrivateText(config.permissions.rootUserId, "Bot成功启动");
         } catch (error) {
           console.warn("启动通知发送失败:", error);
         }
@@ -85,6 +107,7 @@ export class NapcatClient {
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
     this.failPendingActions(new Error("WebSocket shutdown"));
+    this.failQueuedActions(new Error("WebSocket shutdown"));
     this.cleanup();
     if (this.ws) {
       this.ws.close(1000, "shutdown");
@@ -97,38 +120,19 @@ export class NapcatClient {
     params: Record<string, unknown> = {},
     echo: string = randomUUID(),
   ): Promise<ActionResponse> {
-    const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!this.isWsOpen()) {
       throw new Error("WebSocket 未连接");
     }
 
-    const payload = { action, params, echo };
     return new Promise<ActionResponse>((resolve, reject) => {
-      const timeoutMs = Math.max(1000, config.napcat.actionTimeoutMs);
-      const timer = setTimeout(() => {
-        this.pendingActions.delete(echo);
-        this.logAction(
-          "warn",
-          `[action] timeout action=${action} echo=${echo} cost=${timeoutMs}ms`,
-        );
-        reject(new Error(`[action] action=${action} timeout=${timeoutMs}ms`));
-      }, timeoutMs);
-
-      this.pendingActions.set(echo, {
+      this.actionQueue.push({
+        action,
+        params,
+        baseEcho: echo,
         resolve,
         reject,
-        timer,
-        action,
-        startedAt: Date.now(),
       });
-
-      ws.send(JSON.stringify(payload), (error) => {
-        if (error) {
-          clearTimeout(timer);
-          this.pendingActions.delete(echo);
-          reject(error);
-        }
-      });
+      this.pumpActionQueue();
     });
   }
 
@@ -183,6 +187,17 @@ export class NapcatClient {
 
   sendGroupText(groupId: number, message: string): Promise<ActionResponse> {
     return this.sendMessage({ groupId, message });
+  }
+
+  getRuntimeStatus(): RuntimeStatus {
+    return {
+      connected: this.isWsOpen(),
+      reconnecting: this.reconnectTimer !== null,
+      pendingActions: this.pendingActions.size,
+      queuedActions: this.actionQueue.length,
+      inFlightActions: this.actionInFlight,
+      lastPongAt: this.lastPongAt,
+    };
   }
 
   private async onMessage(data: WebSocket.RawData): Promise<void> {
@@ -262,6 +277,110 @@ export class NapcatClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+  }
+
+  private pumpActionQueue(): void {
+    if (this.shuttingDown) return;
+    if (!this.isWsOpen()) return;
+
+    while (
+      this.actionInFlight < this.actionQueueConcurrency &&
+      this.actionQueue.length > 0
+    ) {
+      const queued = this.actionQueue.shift();
+      if (!queued) return;
+
+      this.actionInFlight += 1;
+      void this.runQueuedAction(queued).finally(() => {
+        this.actionInFlight -= 1;
+        this.pumpActionQueue();
+      });
+    }
+  }
+
+  private async runQueuedAction(queued: QueuedAction): Promise<void> {
+    try {
+      const response = await this.executeActionWithRetry(
+        queued.action,
+        queued.params,
+        queued.baseEcho,
+      );
+      queued.resolve(response);
+    } catch (error) {
+      queued.reject(this.toError(error));
+    }
+  }
+
+  private async executeActionWithRetry(
+    action: string,
+    params: Record<string, unknown>,
+    baseEcho: string,
+  ): Promise<ActionResponse> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= 1; attempt += 1) {
+      const echo = attempt === 0 ? baseEcho : `${baseEcho}:r${attempt}`;
+
+      try {
+        return await this.sendActionOnce(action, params, echo);
+      } catch (error) {
+        const normalizedError = this.toError(error);
+        lastError = normalizedError;
+
+        if (attempt === 0 && this.shouldRetryAction(normalizedError)) {
+          this.logAction(
+            "warn",
+            `[action] retry action=${action} reason=${normalizedError.message}`,
+          );
+          await this.delayRetry();
+          continue;
+        }
+
+        throw normalizedError;
+      }
+    }
+
+    throw lastError ?? new Error(`[action] action=${action} unknown error`);
+  }
+
+  private sendActionOnce(
+    action: string,
+    params: Record<string, unknown>,
+    echo: string,
+  ): Promise<ActionResponse> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket 未连接");
+    }
+
+    const payload = { action, params, echo };
+    return new Promise<ActionResponse>((resolve, reject) => {
+      const timeoutMs = Math.max(1000, config.napcat.actionTimeoutMs);
+      const timer = setTimeout(() => {
+        this.pendingActions.delete(echo);
+        this.logAction(
+          "warn",
+          `[action] timeout action=${action} echo=${echo} cost=${timeoutMs}ms`,
+        );
+        reject(new Error(`[action] action=${action} timeout=${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.pendingActions.set(echo, {
+        resolve,
+        reject,
+        timer,
+        action,
+        startedAt: Date.now(),
+      });
+
+      ws.send(JSON.stringify(payload), (error) => {
+        if (error) {
+          clearTimeout(timer);
+          this.pendingActions.delete(echo);
+          reject(error);
+        }
+      });
+    });
   }
 
   private handleActionResponse(response: ActionResponse): void {
@@ -351,6 +470,40 @@ export class NapcatClient {
       pending.reject(error);
       this.pendingActions.delete(echo);
     }
+  }
+
+  private failQueuedActions(error: Error): void {
+    while (this.actionQueue.length > 0) {
+      const queued = this.actionQueue.shift();
+      if (!queued) continue;
+      queued.reject(error);
+    }
+  }
+
+  private shouldRetryAction(error: Error): boolean {
+    const text = error.message;
+    return (
+      text.includes("timeout") ||
+      text.includes("WebSocket 未连接") ||
+      text.includes("WebSocket closed") ||
+      text.includes("ECONNRESET") ||
+      text.includes("EPIPE")
+    );
+  }
+
+  private async delayRetry(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, this.actionRetryDelayMs);
+    });
+  }
+
+  private toError(error: unknown): Error {
+    if (error instanceof Error) return error;
+    return new Error(String(error));
+  }
+
+  private isWsOpen(): boolean {
+    return !!this.ws && this.ws.readyState === WebSocket.OPEN;
   }
 
   private decodeMessage(data: WebSocket.RawData): string {
