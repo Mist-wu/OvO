@@ -3,12 +3,20 @@
 ## Project goal
 - TypeScript bot using NapCat OneBot v11 via forward WebSocket (NapCat as server, bot as client)
 
+## 开发定位与原则
+- 本项目定位为个人开发/个人使用，不按企业级多团队流程设计。
+- 安全策略保持简明：优先使用环境变量管理 token、最小必要权限、失败可追踪日志；不引入复杂 RBAC、审计平台或重型密钥体系。
+- 测试策略保持简明：优先覆盖核心链路与高风险改动，默认使用 `pnpm run test:mock`，必要时补 `pnpm run build`；避免过度复杂的测试基础设施。
+- 新增功能时先保证可运行与可维护，再逐步增强，不为了“完整性”提前引入复杂机制。
+
 ## Current status
 - Base TypeScript config in place (pnpm, tsconfig, dotenv)
 - WS adapter ready: connect/reconnect/heartbeat, event handler, schedule loop
-- Commands: `/ping`, `/echo <text>`, `/help` (private/group)
+- Commands: `/ping`, `/echo <text>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
 - Notice/request/meta_event handling with logging
 - Config toggles for welcome, poke reply, auto-approve group/friend requests
+- Permission model: single root user (`ROOT_USER_ID`), non-root users return "无权限"
+- On startup, bot auto-sends "Bot成功启动" to `ROOT_USER_ID`
 - WS connection verified locally with `pnpm run dev`
 - Action tracking: echo-based pending map, timeout handling, error formatting
 - Optional action logging level + enable switch; no-wait action send supported
@@ -22,11 +30,14 @@
 - `src/napcat/client.ts` (WS client + actions)
 - `src/napcat/handlers.ts` (event handling)
 - `src/napcat/message.ts` (message segment helpers)
+- `src/llm/*` (Gemini/DeepSeek interface scaffold + factory)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
 - `tests/mock_napcat.test.ts` (mock NapCat WS test)
 
 ## Docs
 - NapCat API: `context/napcat_api.md` (when writing NapCat adapters, consult this doc proactively)
+- Deepseek API: `context/deepseek_api.md`
+- Gemini API codegen instructions: https://github.com/googleapis/js-genai/blob/main/codegen_instructions.md (for Gemini API development reference)
 
 ## NapCat 适配策略
 - 以 OneBot v11 事件/动作字段为准，优先查 `context/napcat_api.md`，不要凭记忆硬编码字段名。
@@ -44,9 +55,15 @@
   - `NAPCAT_ACTION_TIMEOUT_MS`
   - `NAPCAT_ACTION_LOG_ENABLED`
   - `NAPCAT_ACTION_LOG_LEVEL` (`error` / `warn` / `info` / `debug`)
+  - `ROOT_USER_ID` (唯一 root 用户 QQ 号)
   - `WELCOME_ENABLED`, `WELCOME_MESSAGE`
   - `POKE_REPLY_ENABLED`, `POKE_REPLY_MESSAGE`
   - `AUTO_APPROVE_GROUP_REQUESTS`, `AUTO_APPROVE_FRIEND_REQUESTS`
+  - LLM scaffold:
+    - `LLM_PROVIDER` (`none` / `gemini` / `deepseek`)
+    - `LLM_TIMEOUT_MS`
+    - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`
+    - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`
 
 ## Run
 1. `pnpm install`
