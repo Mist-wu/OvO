@@ -4,19 +4,9 @@ import path from "node:path";
 import { config } from "../config";
 
 export type PersistentConfig = {
-  admins: number[];
-  whitelist: number[];
   groupEnabled: Record<string, boolean>;
   cooldownMs: number;
 };
-
-function parseNumberList(value: unknown): number[] {
-  if (!Array.isArray(value)) return [];
-  const numbers = value
-    .map((item) => (typeof item === "number" ? item : Number(item)))
-    .filter((item) => Number.isSafeInteger(item) && item > 0) as number[];
-  return Array.from(new Set(numbers)).sort((a, b) => a - b);
-}
 
 function normalizeGroupEnabled(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== "object") return {};
@@ -37,8 +27,6 @@ function normalizeCooldown(value: unknown, fallback: number): number {
 
 function normalizeConfig(input: Partial<PersistentConfig>, defaults: PersistentConfig): PersistentConfig {
   return {
-    admins: parseNumberList(input.admins ?? defaults.admins),
-    whitelist: parseNumberList(input.whitelist ?? defaults.whitelist),
     groupEnabled: normalizeGroupEnabled(input.groupEnabled ?? defaults.groupEnabled),
     cooldownMs: normalizeCooldown(input.cooldownMs ?? defaults.cooldownMs, defaults.cooldownMs),
   };
@@ -57,23 +45,9 @@ export class ConfigStore {
 
   get snapshot(): PersistentConfig {
     return {
-      admins: [...this.data.admins],
-      whitelist: [...this.data.whitelist],
       groupEnabled: { ...this.data.groupEnabled },
       cooldownMs: this.data.cooldownMs,
     };
-  }
-
-  isAdmin(userId: number): boolean {
-    return this.data.admins.includes(userId);
-  }
-
-  isWhitelisted(userId: number): boolean {
-    return this.data.whitelist.includes(userId);
-  }
-
-  whitelistEnabled(): boolean {
-    return this.data.whitelist.length > 0;
   }
 
   isGroupEnabled(groupId: number): boolean {
@@ -84,36 +58,6 @@ export class ConfigStore {
 
   getCooldownMs(): number {
     return this.data.cooldownMs;
-  }
-
-  addAdmin(userId: number): boolean {
-    if (this.data.admins.includes(userId)) return false;
-    this.data.admins = [...this.data.admins, userId].sort((a, b) => a - b);
-    this.persist();
-    return true;
-  }
-
-  removeAdmin(userId: number): boolean {
-    const next = this.data.admins.filter((id) => id !== userId);
-    if (next.length === this.data.admins.length) return false;
-    this.data.admins = next;
-    this.persist();
-    return true;
-  }
-
-  addWhitelist(userId: number): boolean {
-    if (this.data.whitelist.includes(userId)) return false;
-    this.data.whitelist = [...this.data.whitelist, userId].sort((a, b) => a - b);
-    this.persist();
-    return true;
-  }
-
-  removeWhitelist(userId: number): boolean {
-    const next = this.data.whitelist.filter((id) => id !== userId);
-    if (next.length === this.data.whitelist.length) return false;
-    this.data.whitelist = next;
-    this.persist();
-    return true;
   }
 
   setGroupEnabled(groupId: number, enabled: boolean): void {
@@ -166,8 +110,6 @@ function resolveConfigPath(): string {
 }
 
 const defaultConfig: PersistentConfig = {
-  admins: config.permissions.admins,
-  whitelist: config.permissions.whitelist,
   groupEnabled: {},
   cooldownMs: config.permissions.cooldownMs,
 };

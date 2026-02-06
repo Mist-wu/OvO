@@ -1,5 +1,8 @@
 import "dotenv/config";
 
+type ActionLogLevel = "error" | "warn" | "info" | "debug";
+type LlmProvider = "none" | "gemini" | "deepseek";
+
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
@@ -20,7 +23,10 @@ function booleanFromEnv(value: string | undefined, fallback = false): boolean {
   return fallback;
 }
 
-function actionLogLevelFromEnv(value: string | undefined, fallback = "info"): ActionLogLevel {
+function actionLogLevelFromEnv(
+  value: string | undefined,
+  fallback: ActionLogLevel = "info",
+): ActionLogLevel {
   if (!value) return fallback;
   const normalized = value.trim().toLowerCase();
   if (normalized === "error" || normalized === "warn" || normalized === "info" || normalized === "debug") {
@@ -29,15 +35,17 @@ function actionLogLevelFromEnv(value: string | undefined, fallback = "info"): Ac
   return fallback;
 }
 
-function numberListFromEnv(value: string | undefined): number[] {
-  if (!value) return [];
-  return value
-    .split(/[\s,]+/)
-    .map((item) => Number(item))
-    .filter((item) => Number.isSafeInteger(item) && item > 0);
+function llmProviderFromEnv(
+  value: string | undefined,
+  fallback: LlmProvider = "none",
+): LlmProvider {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "none" || normalized === "gemini" || normalized === "deepseek") {
+    return normalized;
+  }
+  return fallback;
 }
-
-type ActionLogLevel = "error" | "warn" | "info" | "debug";
 
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
 const napcatPort = numberFromEnv(process.env.NAPCAT_PORT, 3001);
@@ -60,7 +68,6 @@ export const config = {
       level: actionLogLevelFromEnv(process.env.NAPCAT_ACTION_LOG_LEVEL, "info"),
     },
   },
-  targetQq: optionalNumberFromEnv(process.env.NAPCAT_TARGET_QQ),
   scheduler: {
     intervalMs: numberFromEnv(process.env.SCHEDULE_INTERVAL_MS, 60000),
   },
@@ -77,10 +84,23 @@ export const config = {
     autoApproveFriend: booleanFromEnv(process.env.AUTO_APPROVE_FRIEND_REQUESTS, false),
   },
   permissions: {
-    admins: numberListFromEnv(process.env.BOT_ADMINS),
-    whitelist: numberListFromEnv(process.env.BOT_WHITELIST),
+    rootUserId: optionalNumberFromEnv(process.env.ROOT_USER_ID),
     groupEnabledDefault: booleanFromEnv(process.env.GROUP_ENABLED_DEFAULT, true),
     cooldownMs: numberFromEnv(process.env.COMMAND_COOLDOWN_MS, 0),
     configPath: process.env.BOT_CONFIG_PATH?.trim() || "data/bot_config.json",
+  },
+  llm: {
+    provider: llmProviderFromEnv(process.env.LLM_PROVIDER, "none"),
+    timeoutMs: numberFromEnv(process.env.LLM_TIMEOUT_MS, 30000),
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY?.trim() || "",
+      model: process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
+      baseUrl: process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com",
+    },
+    deepseek: {
+      apiKey: process.env.DEEPSEEK_API_KEY?.trim() || "",
+      model: process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat",
+      baseUrl: process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com/v1",
+    },
   },
 };
