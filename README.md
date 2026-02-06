@@ -7,18 +7,18 @@ TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
 2. 复制 `.env.example` 为 `.env` 并填写连接配置
 3. `pnpm run dev`
 
-## LLM 基础配置（Gemini / DeepSeek）
-- 当前仅提供接口与配置骨架，默认不接入机器人实际功能。
+## Gemini SDK（直连）
+- 仅保留 Gemini，使用 `@google/genai` 直接连接，不再保留多模型集成层。
 - 在 `.env` 中设置：
-  - `LLM_PROVIDER=none|gemini|deepseek`
-  - `GEMINI_API_KEY` / `DEEPSEEK_API_KEY`
-  - `GEMINI_MODEL` / `DEEPSEEK_MODEL`
-  - `GEMINI_BASE_URL` / `DEEPSEEK_BASE_URL`
-  - `LLM_TIMEOUT_MS`
+  - `GEMINI_API_KEY`
+  - `GEMINI_MODEL`
+  - `GEMINI_BASE_URL`
+  - `GEMINI_TIMEOUT_MS`
 - 代码入口：
-  - `src/llm/index.ts`
-  - `createLlmClientFromConfig()`：按配置创建客户端
-  - `getLlmSetupSummary()`：输出当前 LLM 配置摘要
+  - `src/llm/gemini.ts`
+  - `createGeminiSdkClient()`：创建 Gemini SDK 客户端
+  - `getGeminiModel()`：读取默认模型名
+  - `getGeminiSetupSummary()`：输出当前 Gemini 配置摘要
 
 ## 常用命令
 - 当前实现为 root-only：只有 `ROOT_USER_ID` 可执行命令，其他用户统一返回“无权限”。

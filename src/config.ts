@@ -1,7 +1,6 @@
 import "dotenv/config";
 
 type ActionLogLevel = "error" | "warn" | "info" | "debug";
-type LlmProvider = "none" | "gemini" | "deepseek";
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -30,18 +29,6 @@ function actionLogLevelFromEnv(
   if (!value) return fallback;
   const normalized = value.trim().toLowerCase();
   if (normalized === "error" || normalized === "warn" || normalized === "info" || normalized === "debug") {
-    return normalized;
-  }
-  return fallback;
-}
-
-function llmProviderFromEnv(
-  value: string | undefined,
-  fallback: LlmProvider = "none",
-): LlmProvider {
-  if (!value) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "none" || normalized === "gemini" || normalized === "deepseek") {
     return normalized;
   }
   return fallback;
@@ -90,17 +77,11 @@ export const config = {
     configPath: process.env.BOT_CONFIG_PATH?.trim() || "data/bot_config.json",
   },
   llm: {
-    provider: llmProviderFromEnv(process.env.LLM_PROVIDER, "none"),
-    timeoutMs: numberFromEnv(process.env.LLM_TIMEOUT_MS, 30000),
     gemini: {
       apiKey: process.env.GEMINI_API_KEY?.trim() || "",
       model: process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
       baseUrl: process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com",
-    },
-    deepseek: {
-      apiKey: process.env.DEEPSEEK_API_KEY?.trim() || "",
-      model: process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat",
-      baseUrl: process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com/v1",
+      timeoutMs: numberFromEnv(process.env.GEMINI_TIMEOUT_MS, 30000),
     },
   },
 };

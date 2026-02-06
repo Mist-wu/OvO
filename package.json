@@ -9,6 +9,7 @@
     "test:mock": "tsx tests/mock_napcat.test.ts"
   },
   "dependencies": {
+    "@google/genai": "^1.40.0",
     "dotenv": "^16.4.5",
     "ws": "^8.17.1"
   },

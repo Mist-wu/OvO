@@ -30,14 +30,13 @@
 - `src/napcat/client.ts` (WS client + actions)
 - `src/napcat/handlers.ts` (event handling)
 - `src/napcat/message.ts` (message segment helpers)
-- `src/llm/*` (Gemini/DeepSeek interface scaffold + factory)
+- `src/llm/gemini.ts` (Gemini SDK 直连)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
 - `tests/mock_napcat.test.ts` (mock NapCat WS test)
 
 ## Docs
 - NapCat API: `context/napcat_api.md` (when writing NapCat adapters, consult this doc proactively)
-- Deepseek API: `context/deepseek_api.md`
-- Gemini API codegen instructions: https://github.com/googleapis/js-genai/blob/main/codegen_instructions.md (for Gemini API development reference)
+- Gemini API codegen instructions: `https://github.com/googleapis/js-genai/blob/main/codegen_instructions.md`
 
 ## NapCat 适配策略
 - 以 OneBot v11 事件/动作字段为准，优先查 `context/napcat_api.md`，不要凭记忆硬编码字段名。
@@ -59,11 +58,8 @@
   - `WELCOME_ENABLED`, `WELCOME_MESSAGE`
   - `POKE_REPLY_ENABLED`, `POKE_REPLY_MESSAGE`
   - `AUTO_APPROVE_GROUP_REQUESTS`, `AUTO_APPROVE_FRIEND_REQUESTS`
-  - LLM scaffold:
-    - `LLM_PROVIDER` (`none` / `gemini` / `deepseek`)
-    - `LLM_TIMEOUT_MS`
-    - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`
-    - `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`
+  - Gemini SDK:
+    - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
 
 ## Run
 1. `pnpm install`
