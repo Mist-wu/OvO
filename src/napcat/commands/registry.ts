@@ -1,14 +1,11 @@
 import { config } from "../../config";
 import { configStore } from "../../storage/config_store";
+import { fetchWeatherSummary } from "../../utils/weather";
 import type { CommandDefinition, ParsedCommand } from "./types";
 
 type EmptyPayload = Record<string, never>;
 
 const emptyPayload: EmptyPayload = {};
-
-export const helpText =
-  "/ping /echo <text> /help /status /config " +
-  "/group on|off [group_id] /cooldown [ms]";
 
 function defineCommand<Payload>(
   definition: CommandDefinition<Payload>,
@@ -31,9 +28,23 @@ function parseNumber(value: string, allowZero = false): number | null {
   return parsed;
 }
 
+function getCommandHelpText(scope: "root" | "user"): string {
+  const lines = commandRegistry
+    .filter((definition) => {
+      if (!definition.help) return false;
+      const access = definition.access ?? "root";
+      if (scope === "root") return true;
+      return access === "user";
+    })
+    .map((definition) => definition.help?.trim() || "")
+    .filter(Boolean);
+  return lines.join(" ");
+}
+
 const builtInCommands: CommandDefinition<unknown>[] = [
   defineCommand({
     name: "ping",
+    help: "/ping",
     parse(message) {
       return message.trim() === "/ping" ? emptyPayload : null;
     },
@@ -43,6 +54,7 @@ const builtInCommands: CommandDefinition<unknown>[] = [
   }),
   defineCommand({
     name: "echo",
+    help: "/echo <text>",
     parse(message) {
       const trimmed = message.trim();
       if (!trimmed.startsWith("/echo ")) return null;
@@ -55,16 +67,18 @@ const builtInCommands: CommandDefinition<unknown>[] = [
   }),
   defineCommand({
     name: "help",
+    help: "/help",
     cooldownExempt: true,
     parse(message) {
       return message.trim() === "/help" ? emptyPayload : null;
     },
     async execute(context) {
-      await context.sendText(helpText);
+      await context.sendText(getCommandHelpText("root"));
     },
   }),
   defineCommand({
     name: "status",
+    help: "/status",
     cooldownExempt: true,
     parse(message) {
       return message.trim() === "/status" ? emptyPayload : null;
@@ -81,6 +95,7 @@ const builtInCommands: CommandDefinition<unknown>[] = [
   }),
   defineCommand({
     name: "config",
+    help: "/config",
     cooldownExempt: true,
     parse(message) {
       return message.trim() === "/config" ? emptyPayload : null;
@@ -101,6 +116,7 @@ const builtInCommands: CommandDefinition<unknown>[] = [
   }),
   defineCommand({
     name: "group_on",
+    help: "/group on|off [group_id]",
     cooldownExempt: true,
     allowWhenGroupDisabled: true,
     parse(message) {
@@ -155,6 +171,7 @@ const builtInCommands: CommandDefinition<unknown>[] = [
   }),
   defineCommand({
     name: "cooldown_get",
+    help: "/cooldown [ms]",
     parse(message) {
       const parts = splitParts(message);
       if (parts[0] === "/cooldown" && parts.length === 1) return emptyPayload;
@@ -178,6 +195,48 @@ const builtInCommands: CommandDefinition<unknown>[] = [
       const ms = (payload as { ms: number }).ms;
       configStore.setCooldownMs(ms);
       await context.sendText(`已设置冷却时间 ${ms}ms`);
+    },
+  }),
+  defineCommand({
+    name: "user_help",
+    access: "user",
+    help: "/帮助",
+    cooldownExempt: true,
+    parse(message) {
+      return message.trim() === "/帮助" ? emptyPayload : null;
+    },
+    async execute(context) {
+      await context.sendText(getCommandHelpText("user"));
+    },
+  }),
+  defineCommand({
+    name: "weather",
+    access: "user",
+    help: "/天气 <城市>",
+    parse(message) {
+      const matched = message.trim().match(/^\/天气(?:\s+(.+))?$/);
+      if (!matched) return null;
+      return { location: matched[1]?.trim() || "" };
+    },
+    async execute(context, payload) {
+      const location = (payload as { location?: string }).location || "";
+      if (!location) {
+        await context.sendText("用法：/天气 <城市>");
+        return;
+      }
+
+      try {
+        const report = await fetchWeatherSummary(location);
+        await context.sendText(report);
+      } catch (error) {
+        console.warn("[weather] 查询失败:", error);
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("WEATHER_API_KEY")) {
+          await context.sendText(message);
+          return;
+        }
+        await context.sendText("天气查询失败，请稍后重试");
+      }
     },
   }),
 ];

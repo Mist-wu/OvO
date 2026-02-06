@@ -1,6 +1,8 @@
 import type { NapcatClient } from "../client";
 import type { MessageSegment } from "../message";
 
+export type CommandAccess = "root" | "user";
+
 export type OneBotEvent = Record<string, unknown> & {
   post_type?: string;
   message_type?: string;
@@ -28,6 +30,8 @@ export type CommandExecutionContext = {
 
 export type CommandDefinition<Payload = unknown> = {
   name: string;
+  access?: CommandAccess;
+  help?: string;
   cooldownExempt?: boolean;
   allowWhenGroupDisabled?: boolean;
   parse: (message: string) => Payload | null;

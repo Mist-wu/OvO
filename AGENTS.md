@@ -12,10 +12,11 @@
 ## Current status
 - Base TypeScript config in place (pnpm, tsconfig, dotenv)
 - WS adapter ready: connect/reconnect/heartbeat, event handler, schedule loop
-- Commands: `/ping`, `/echo <text>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
+- Commands (root): `/ping`, `/echo <text>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
+- Commands (user): `/帮助`, `/天气 <城市>`
 - Notice/request/meta_event handling with logging
 - Config toggles for welcome, poke reply, auto-approve group/friend requests
-- Permission model: single root user (`ROOT_USER_ID`), non-root users return "无权限"
+- Permission model: single root user (`ROOT_USER_ID`) + user command set for all users
 - On startup, bot auto-sends "Bot成功启动" to `ROOT_USER_ID`
 - WS connection verified locally with `pnpm run dev`
 - Action tracking: echo-based pending map, timeout handling, error formatting
@@ -60,6 +61,8 @@
   - `AUTO_APPROVE_GROUP_REQUESTS`, `AUTO_APPROVE_FRIEND_REQUESTS`
   - Gemini SDK:
     - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
+  - Weather:
+    - `WEATHER_API_KEY`, `WEATHER_TIMEOUT_MS`
 
 ## Run
 1. `pnpm install`

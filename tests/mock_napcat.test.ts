@@ -320,11 +320,11 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
           messageToText(item.params.message) ===
-            "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms]",
+            "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
       );
       assert.equal(
         messageToText(action.params.message),
-        "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms]",
+        "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
       );
     });
 
@@ -344,6 +344,83 @@ async function main() {
           messageToText(item.params.message).includes("connected=true"),
       );
       assert.equal(true, messageToText(action.params.message).includes("pending="));
+    });
+
+    await runTest("user command /帮助 is available to non-root users", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/帮助",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "/帮助 /天气 <城市>",
+      );
+      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市>");
+    });
+
+    await runTest("user command /天气 without location returns usage", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/天气",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "用法：/天气 <城市>",
+      );
+      assert.equal(messageToText(action.params.message), "用法：/天气 <城市>");
+    });
+
+    await runTest("weather formatter follows python template", async () => {
+      const { formatWeatherInfo } = await import("../src/utils/weather");
+      const formatted = formatWeatherInfo({
+        code: 200,
+        msg: "success",
+        data: {
+          weather: {
+            location: {
+              name: "beijing",
+              state: "北京",
+              coordinates: { lat: 39.90458, lon: 116.40699 },
+            },
+            current: {
+              temperature: -7,
+              feels_like: 5,
+              condition: "大部晴朗",
+              humidity: 38,
+              wind: { direction: "西南风", speed: "1级" },
+            },
+            air_quality: { aqi: 30 },
+            metadata: { last_updated: "2026-02-06T15:07:56+00:00" },
+          },
+          forecast: [
+            { date: "周五", high_temp: -4, low_temp: -9 },
+            { date: "周六", high_temp: 0, low_temp: -10 },
+          ],
+        },
+      });
+
+      assert.equal(formatted.includes("北京 · BEIJING"), true);
+      assert.equal(formatted.includes("☀️ 当前天气: 大部晴朗"), true);
+      assert.equal(formatted.includes("温度: -7°C (体感 5°C)"), true);
+      assert.equal(formatted.includes("风况: 西南风 1级"), true);
+      assert.equal(formatted.includes("空气质量: AQI 30"), true);
+      assert.equal(formatted.includes("优"), true);
+      assert.equal(formatted.includes("未来天气预报:"), true);
+      assert.equal(formatted.includes("周五:"), true);
+      assert.equal(formatted.includes("-9°C ~ -4°C"), true);
+      assert.equal(formatted.includes("数据更新于: 2026-02-06 23:07:56"), true);
     });
 
     await runTest("permission middleware blocks non-root users", async () => {

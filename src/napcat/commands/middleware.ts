@@ -25,7 +25,13 @@ export const groupEnabledMiddleware: CommandMiddleware = async (context, next) =
 };
 
 export const permissionMiddleware: CommandMiddleware = async (context, next) => {
-  if (!context.isRoot) {
+  const access = context.command.definition.access ?? "root";
+  if (access === "user") {
+    await next();
+    return;
+  }
+
+  if (access === "root" && !context.isRoot) {
     await context.sendText("无权限");
     return;
   }

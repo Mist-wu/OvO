@@ -84,4 +84,8 @@ export const config = {
       timeoutMs: numberFromEnv(process.env.GEMINI_TIMEOUT_MS, 30000),
     },
   },
+  weather: {
+    apiKey: process.env.WEATHER_API_KEY?.trim() || "",
+    timeoutMs: numberFromEnv(process.env.WEATHER_TIMEOUT_MS, 8000),
+  },
 };
