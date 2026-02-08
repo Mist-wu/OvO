@@ -1,6 +1,9 @@
-# OvO
-
-TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
+<p align="center">
+    <h1 align="center">✨ OvO ✨</h1>
+    <p align="center">
+        TypeScript 个人Chat Agent项目，基于 NapCat OneBot v11 正向 WebSocket。
+    </p>
+</p>
 
 ## 快速开始
 1. `pnpm install`
