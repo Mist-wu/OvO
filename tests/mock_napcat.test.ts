@@ -350,11 +350,11 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
           messageToText(item.params.message) ===
-            "/ping /echo <text> /问 <问题> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
+            "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/group on|off [group_id]\n/cooldown [ms]\n/帮助\n/天气 <城市>",
       );
       assert.equal(
         messageToText(action.params.message),
-        "/ping /echo <text> /问 <问题> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
+        "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/group on|off [group_id]\n/cooldown [ms]\n/帮助\n/天气 <城市>",
       );
     });
 
@@ -389,9 +389,9 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "/帮助 /天气 <城市>",
+          messageToText(item.params.message) === "/帮助\n/天气 <城市>",
       );
-      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市>");
+      assert.equal(messageToText(action.params.message), "/帮助\n/天气 <城市>");
     });
 
     await runTest("user command /天气 without location returns usage", async () => {

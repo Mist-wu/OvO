@@ -16,7 +16,7 @@ function getCommandHelpText(scope: HelpScope): string {
     })
     .map((definition) => definition.help?.trim() || "")
     .filter(Boolean)
-    .join(" ");
+    .join("\n");
 }
 
 function createBuiltInCommands(): CommandDefinition<unknown>[] {
