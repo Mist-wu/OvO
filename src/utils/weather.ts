@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { runExternalCall } from "./external_call";
+import { runExternalCall, type ExternalCallError } from "./external_call";
 
 type WeatherApiResponse = {
   code?: number;
@@ -201,14 +201,23 @@ export async function fetchWeatherSummary(location: string): Promise<string> {
     throw new Error("天气功能未配置：请设置 WEATHER_API_KEY");
   }
 
-  const payload = await runExternalCall<WeatherApiResponse>(
+  const circuitBreaker = {
+    enabled: config.external.circuitBreakerEnabled,
+    key: "weather",
+    failureThreshold: config.external.circuitFailureThreshold,
+    openMs: config.external.circuitOpenMs,
+  };
+
+  const payload = await runExternalCall<WeatherApiResponse | string>(
     {
       service: "weather",
       operation: "fetch_summary",
       timeoutMs: config.weather.timeoutMs,
-      retries: 1,
-      retryDelayMs: 150,
-      concurrency: 4,
+      retries: config.external.weather.retries,
+      retryDelayMs: config.external.weather.retryDelayMs,
+      concurrency: config.external.weather.concurrency,
+      circuitBreaker,
+      fallback: (error) => resolveWeatherFallback(error),
     },
     async ({ signal }) => {
       const url = `https://api2.wer.plus/api/weather?key=${encodeURIComponent(apiKey)}`;
@@ -230,5 +239,26 @@ export async function fetchWeatherSummary(location: string): Promise<string> {
     },
   );
 
+  if (typeof payload === "string") {
+    return payload;
+  }
+
   return formatWeatherInfo(payload);
+}
+
+function resolveWeatherFallback(error: ExternalCallError): string {
+  const cause = error.cause;
+  if (cause instanceof Error && cause.message.includes("WEATHER_API_KEY")) {
+    throw cause;
+  }
+
+  if (!config.external.weather.degradeOnFailure) {
+    throw error;
+  }
+
+  if (error.reason === "circuit_open" || error.retryable) {
+    return "天气服务暂时不可用，请稍后重试";
+  }
+
+  throw error;
 }

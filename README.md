@@ -17,6 +17,8 @@
   - `GEMINI_MODEL`
   - `GEMINI_BASE_URL`
   - `GEMINI_TIMEOUT_MS`
+  - `GEMINI_RETRIES`, `GEMINI_RETRY_DELAY_MS`, `GEMINI_CONCURRENCY`
+  - `GEMINI_DEGRADE_ON_FAILURE`
 - 代码入口：
   - `src/llm/gemini.ts`
   - `createGeminiSdkClient()`：创建 Gemini SDK 客户端
@@ -29,6 +31,13 @@
 - 在 `.env` 中设置：
   - `WEATHER_API_KEY`
   - `WEATHER_TIMEOUT_MS`（可选，默认 8000ms）
+  - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`
+  - `WEATHER_DEGRADE_ON_FAILURE`
+
+## 外部调用治理
+- 统一治理入口：`src/utils/external_call.ts`
+- 支持超时、重试、并发门控、熔断与降级回退
+- 熔断配置：`EXTERNAL_CIRCUIT_BREAKER_ENABLED`、`EXTERNAL_CIRCUIT_FAILURE_THRESHOLD`、`EXTERNAL_CIRCUIT_OPEN_MS`
 
 ## 常用命令
 - root 指令（仅 `ROOT_USER_ID`）：

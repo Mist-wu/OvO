@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 import { config } from "../config";
-import { runExternalCall } from "../utils/external_call";
+import { runExternalCall, type ExternalCallError } from "../utils/external_call";
 
 function normalizeBaseUrl(input: string): string | undefined {
   const trimmed = input.trim();
@@ -39,15 +39,23 @@ export async function askGemini(prompt: string): Promise<string> {
   if (!normalizedPrompt) {
     throw new Error("[llm] prompt is required");
   }
+  const circuitBreaker = {
+    enabled: config.external.circuitBreakerEnabled,
+    key: "gemini",
+    failureThreshold: config.external.circuitFailureThreshold,
+    openMs: config.external.circuitOpenMs,
+  };
 
   return runExternalCall(
     {
       service: "gemini",
       operation: "generate_content",
       timeoutMs: config.llm.gemini.timeoutMs,
-      retries: 1,
-      retryDelayMs: 200,
-      concurrency: 2,
+      retries: config.external.gemini.retries,
+      retryDelayMs: config.external.gemini.retryDelayMs,
+      concurrency: config.external.gemini.concurrency,
+      circuitBreaker,
+      fallback: (error) => resolveGeminiFallback(error),
     },
     async () => {
       const client = createGeminiSdkClient();
@@ -63,4 +71,21 @@ export async function askGemini(prompt: string): Promise<string> {
       return output;
     },
   );
+}
+
+function resolveGeminiFallback(error: ExternalCallError): string {
+  const cause = error.cause;
+  if (cause instanceof Error && cause.message.includes("GEMINI_API_KEY")) {
+    throw cause;
+  }
+
+  if (!config.external.gemini.degradeOnFailure) {
+    throw error;
+  }
+
+  if (error.reason === "circuit_open" || error.retryable) {
+    return "Gemini 服务暂时不可用，请稍后再试";
+  }
+
+  throw error;
 }

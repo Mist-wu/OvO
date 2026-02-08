@@ -5,7 +5,16 @@ type ExternalCallContext = {
 
 type RetryDecider = (error: Error) => boolean;
 
-export type ExternalCallOptions = {
+type ExternalCallErrorReason = "call_failed" | "circuit_open";
+
+type CircuitBreakerOptions = {
+  enabled?: boolean;
+  key?: string;
+  failureThreshold?: number;
+  openMs?: number;
+};
+
+export type ExternalCallOptions<T = unknown> = {
   service: string;
   operation: string;
   timeoutMs: number;
@@ -14,6 +23,8 @@ export type ExternalCallOptions = {
   concurrency?: number;
   concurrencyKey?: string;
   isRetryable?: RetryDecider;
+  circuitBreaker?: CircuitBreakerOptions;
+  fallback?: (error: ExternalCallError) => Promise<T> | T;
 };
 
 export class ExternalCallError extends Error {
@@ -21,16 +32,18 @@ export class ExternalCallError extends Error {
   readonly operation: string;
   readonly attempts: number;
   readonly retryable: boolean;
+  readonly reason: ExternalCallErrorReason;
 
   constructor(params: {
     service: string;
     operation: string;
     attempts: number;
     retryable: boolean;
+    reason: ExternalCallErrorReason;
     cause: Error;
   }) {
     super(
-      `[external] ${params.service}.${params.operation} failed after ${params.attempts} attempt(s): ${params.cause.message}`,
+      `[external] ${params.service}.${params.operation} ${params.reason} after ${params.attempts} attempt(s): ${params.cause.message}`,
       { cause: params.cause },
     );
     this.name = "ExternalCallError";
@@ -38,6 +51,7 @@ export class ExternalCallError extends Error {
     this.operation = params.operation;
     this.attempts = params.attempts;
     this.retryable = params.retryable;
+    this.reason = params.reason;
   }
 }
 
@@ -68,7 +82,13 @@ class ConcurrencyGate {
   }
 }
 
+type CircuitState = {
+  failures: number;
+  openUntil: number;
+};
+
 const gates = new Map<string, ConcurrencyGate>();
+const circuits = new Map<string, CircuitState>();
 
 function getGate(key: string, limit: number): ConcurrencyGate {
   const existing = gates.get(key);
@@ -78,9 +98,23 @@ function getGate(key: string, limit: number): ConcurrencyGate {
   return next;
 }
 
+function getCircuitState(key: string): CircuitState {
+  const existing = circuits.get(key);
+  if (existing) return existing;
+  const next: CircuitState = { failures: 0, openUntil: 0 };
+  circuits.set(key, next);
+  return next;
+}
+
 function normalizeError(error: unknown): Error {
   if (error instanceof Error) return error;
   return new Error(String(error));
+}
+
+function normalizePositiveInt(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : fallback;
 }
 
 function isRetryableByDefault(error: Error): boolean {
@@ -110,8 +144,50 @@ function createTimeoutError(service: string, operation: string, timeoutMs: numbe
   return error;
 }
 
+function createCircuitOpenError(
+  service: string,
+  operation: string,
+  msRemaining: number,
+): ExternalCallError {
+  return new ExternalCallError({
+    service,
+    operation,
+    attempts: 0,
+    retryable: false,
+    reason: "circuit_open",
+    cause: new Error(
+      `[external] circuit open service=${service} operation=${operation} reopen_in_ms=${msRemaining}`,
+    ),
+  });
+}
+
+async function resolveFallbackOrThrow<T>(
+  fallback: ExternalCallOptions<T>["fallback"],
+  error: ExternalCallError,
+): Promise<T> {
+  if (!fallback) throw error;
+
+  console.warn(
+    `[external] fallback service=${error.service} operation=${error.operation} reason=${error.reason}`,
+  );
+  return fallback(error);
+}
+
+function markCircuitFailure(state: CircuitState, failureThreshold: number, openMs: number): void {
+  state.failures += 1;
+  if (state.failures >= failureThreshold) {
+    state.failures = 0;
+    state.openUntil = Date.now() + openMs;
+  }
+}
+
+function markCircuitSuccess(state: CircuitState): void {
+  state.failures = 0;
+  state.openUntil = 0;
+}
+
 export async function runExternalCall<T>(
-  options: ExternalCallOptions,
+  options: ExternalCallOptions<T>,
   runner: (context: ExternalCallContext) => Promise<T>,
 ): Promise<T> {
   const retries = Math.max(0, Math.floor(options.retries ?? 0));
@@ -122,10 +198,29 @@ export async function runExternalCall<T>(
   const gate = getGate(gateKey, concurrency);
   const shouldRetry = options.isRetryable ?? isRetryableByDefault;
 
+  const circuitEnabled = options.circuitBreaker?.enabled ?? false;
+  const circuitFailureThreshold = normalizePositiveInt(
+    options.circuitBreaker?.failureThreshold,
+    3,
+  );
+  const circuitOpenMs = normalizePositiveInt(options.circuitBreaker?.openMs, 30000);
+  const circuitKey =
+    options.circuitBreaker?.key?.trim() || `${options.service}:${options.operation}`;
+  const circuitState = circuitEnabled ? getCircuitState(circuitKey) : null;
+
   await gate.acquire();
   try {
-    let lastError: Error | null = null;
-    let lastRetryable = false;
+    if (circuitState) {
+      const now = Date.now();
+      if (circuitState.openUntil > now) {
+        const openError = createCircuitOpenError(
+          options.service,
+          options.operation,
+          circuitState.openUntil - now,
+        );
+        return resolveFallbackOrThrow(options.fallback, openError);
+      }
+    }
 
     for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
       const controller = new AbortController();
@@ -143,12 +238,18 @@ export async function runExternalCall<T>(
           runner({ signal: controller.signal, attempt }),
           timeoutPromise,
         ]);
+
+        if (circuitState) {
+          markCircuitSuccess(circuitState);
+        }
         return result;
       } catch (error) {
         const normalized = normalizeError(error);
         const retryable = shouldRetry(normalized);
-        lastError = normalized;
-        lastRetryable = retryable;
+
+        if (circuitState) {
+          markCircuitFailure(circuitState, circuitFailureThreshold, circuitOpenMs);
+        }
 
         if (retryable && attempt <= retries) {
           console.warn(
@@ -160,25 +261,29 @@ export async function runExternalCall<T>(
           continue;
         }
 
-        throw new ExternalCallError({
+        const finalError = new ExternalCallError({
           service: options.service,
           operation: options.operation,
           attempts: attempt,
           retryable,
+          reason: "call_failed",
           cause: normalized,
         });
+        return resolveFallbackOrThrow(options.fallback, finalError);
       } finally {
         if (timer) clearTimeout(timer);
       }
     }
 
-    throw new ExternalCallError({
+    const impossibleError = new ExternalCallError({
       service: options.service,
       operation: options.operation,
       attempts: retries + 1,
-      retryable: lastRetryable,
-      cause: lastError ?? new Error("unknown external error"),
+      retryable: false,
+      reason: "call_failed",
+      cause: new Error("unknown external error"),
     });
+    return resolveFallbackOrThrow(options.fallback, impossibleError);
   } finally {
     gate.release();
   }

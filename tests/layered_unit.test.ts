@@ -97,6 +97,89 @@ async function main() {
     );
   });
 
+  await runTest("external call opens circuit and uses fallback", async () => {
+    let attempts = 0;
+    const invoke = () =>
+      runExternalCall(
+        {
+          service: "unit",
+          operation: "circuit_with_fallback",
+          timeoutMs: 100,
+          retries: 0,
+          circuitBreaker: {
+            enabled: true,
+            key: "unit:circuit_with_fallback",
+            failureThreshold: 1,
+            openMs: 1000,
+          },
+          fallback: () => "degraded",
+        },
+        async () => {
+          attempts += 1;
+          throw new Error("status=503");
+        },
+      );
+
+    const first = await invoke();
+    const second = await invoke();
+
+    assert.equal(first, "degraded");
+    assert.equal(second, "degraded");
+    assert.equal(attempts, 1);
+  });
+
+  await runTest("external call circuit open returns typed error when no fallback", async () => {
+    await assert.rejects(
+      () =>
+        runExternalCall(
+          {
+            service: "unit",
+            operation: "circuit_without_fallback",
+            timeoutMs: 100,
+            retries: 0,
+            circuitBreaker: {
+              enabled: true,
+              key: "unit:circuit_without_fallback",
+              failureThreshold: 1,
+              openMs: 1000,
+            },
+          },
+          async () => {
+            throw new Error("status=503");
+          },
+        ),
+      (error) => {
+        assert.equal(error instanceof ExternalCallError, true);
+        assert.equal((error as ExternalCallError).reason, "call_failed");
+        return true;
+      },
+    );
+
+    await assert.rejects(
+      () =>
+        runExternalCall(
+          {
+            service: "unit",
+            operation: "circuit_without_fallback",
+            timeoutMs: 100,
+            retries: 0,
+            circuitBreaker: {
+              enabled: true,
+              key: "unit:circuit_without_fallback",
+              failureThreshold: 1,
+              openMs: 1000,
+            },
+          },
+          async () => "should_not_run",
+        ),
+      (error) => {
+        assert.equal(error instanceof ExternalCallError, true);
+        assert.equal((error as ExternalCallError).reason, "circuit_open");
+        return true;
+      },
+    );
+  });
+
   await runTest("external call concurrency gate serializes by key", async () => {
     let active = 0;
     let maxActive = 0;
