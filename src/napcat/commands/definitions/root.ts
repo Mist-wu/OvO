@@ -1,4 +1,5 @@
 import { config } from "../../../config";
+import { askGemini } from "../../../llm";
 import { configStore } from "../../../storage/config_store";
 import type { CommandDefinition } from "../types";
 
@@ -51,6 +52,35 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       async execute(context, payload) {
         const text = (payload as { text?: string }).text || "(empty)";
         await context.sendText(text);
+      },
+    }),
+    defineCommand({
+      name: "ask",
+      help: "/问 <问题>",
+      parse(message) {
+        const matched = message.trim().match(/^\/问(?:\s+(.+))?$/);
+        if (!matched) return null;
+        return { prompt: matched[1]?.trim() || "" };
+      },
+      async execute(context, payload) {
+        const prompt = (payload as { prompt?: string }).prompt || "";
+        if (!prompt) {
+          await context.sendText("用法：/问 <问题>");
+          return;
+        }
+
+        try {
+          const answer = await askGemini(prompt);
+          await context.sendText(answer);
+        } catch (error) {
+          console.warn("[llm] /问 失败:", error);
+          const message = error instanceof Error ? error.message : "";
+          if (message.includes("GEMINI_API_KEY")) {
+            await context.sendText(message);
+            return;
+          }
+          await context.sendText("问答失败，请稍后重试");
+        }
       },
     }),
     defineCommand({

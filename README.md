@@ -19,6 +19,7 @@ TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
   - `createGeminiSdkClient()`：创建 Gemini SDK 客户端
   - `getGeminiModel()`：读取默认模型名
   - `getGeminiSetupSummary()`：输出当前 Gemini 配置摘要
+  - `askGemini()`：统一外部调用治理（超时/重试/并发）后的 Gemini 问答
 
 ## 天气配置
 - `/天气 <城市>` 使用 `api2.wer.plus`。
@@ -30,6 +31,7 @@ TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
 - root 指令（仅 `ROOT_USER_ID`）：
   - `/ping` 健康检查
   - `/echo <text>` 回显文本
+  - `/问 <问题>` 使用 Gemini 问答
   - `/help` 查看完整命令列表（root + user）
   - `/status` 查看运行状态（连接、队列、pending）
   - `/config` 查看当前配置摘要
@@ -38,9 +40,9 @@ TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
 - user 指令（所有用户可用）：
   - `/帮助` 查看 user 指令列表
   - `/天气 <城市>` 查询天气
-  - `/问 <问题>` 使用 Gemini 问答
 
 ## 测试与构建
+- `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
 - `pnpm run test:mock`：核心链路回归（连接、命令、中间件、动作重试/超时）
 - `pnpm run build`：TypeScript 类型检查与构建
 

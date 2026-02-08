@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { runExternalCall } from "./external_call";
 
 type WeatherApiResponse = {
   code?: number;
@@ -200,27 +201,34 @@ export async function fetchWeatherSummary(location: string): Promise<string> {
     throw new Error("天气功能未配置：请设置 WEATHER_API_KEY");
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, config.weather.timeoutMs));
-  try {
-    const url = `https://api2.wer.plus/api/weather?key=${encodeURIComponent(apiKey)}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({ city }).toString(),
-      signal: controller.signal,
-    });
+  const payload = await runExternalCall<WeatherApiResponse>(
+    {
+      service: "weather",
+      operation: "fetch_summary",
+      timeoutMs: config.weather.timeoutMs,
+      retries: 1,
+      retryDelayMs: 150,
+      concurrency: 4,
+    },
+    async ({ signal }) => {
+      const url = `https://api2.wer.plus/api/weather?key=${encodeURIComponent(apiKey)}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({ city }).toString(),
+        signal,
+      });
 
-    if (!response.ok) {
-      throw new Error(`[weather] request failed status=${response.status}`);
-    }
+      if (!response.ok) {
+        throw new Error(`[weather] request failed status=${response.status}`);
+      }
 
-    const payload = (await response.json()) as WeatherApiResponse;
-    return formatWeatherInfo(payload);
-  } finally {
-    clearTimeout(timer);
-  }
+      return (await response.json()) as WeatherApiResponse;
+    },
+  );
+
+  return formatWeatherInfo(payload);
 }

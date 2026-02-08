@@ -321,11 +321,11 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
           messageToText(item.params.message) ===
-            "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市> /问 <问题>",
+            "/ping /echo <text> /问 <问题> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
       );
       assert.equal(
         messageToText(action.params.message),
-        "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市> /问 <问题>",
+        "/ping /echo <text> /问 <问题> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
       );
     });
 
@@ -360,9 +360,9 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "/帮助 /天气 <城市> /问 <问题>",
+          messageToText(item.params.message) === "/帮助 /天气 <城市>",
       );
-      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市> /问 <问题>");
+      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市>");
     });
 
     await runTest("user command /天气 without location returns usage", async () => {
@@ -383,25 +383,7 @@ async function main() {
       assert.equal(messageToText(action.params.message), "用法：/天气 <城市>");
     });
 
-    await runTest("user command /问 without prompt returns usage", async () => {
-      server.sendEvent({
-        post_type: "message",
-        message_type: "private",
-        user_id: 22222,
-        self_id: 99999,
-        message: "/问",
-      });
-
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "用法：/问 <问题>",
-      );
-      assert.equal(messageToText(action.params.message), "用法：/问 <问题>");
-    });
-
-    await runTest("user command /问 returns config hint when key missing", async () => {
+    await runTest("non-root user command /问 is denied", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "private",
@@ -414,6 +396,42 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "无权限",
+      );
+      assert.equal(messageToText(action.params.message), "无权限");
+    });
+
+    await runTest("root command /问 without prompt returns usage", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/问",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === "用法：/问 <问题>",
+      );
+      assert.equal(messageToText(action.params.message), "用法：/问 <问题>");
+    });
+
+    await runTest("root command /问 returns config hint when key missing", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/问 你好",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
           messageToText(item.params.message).includes("GEMINI_API_KEY"),
       );
       assert.equal(true, messageToText(action.params.message).includes("GEMINI_API_KEY"));

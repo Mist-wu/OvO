@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 import { config } from "../config";
+import { runExternalCall } from "../utils/external_call";
 
 function normalizeBaseUrl(input: string): string | undefined {
   const trimmed = input.trim();
@@ -39,15 +40,27 @@ export async function askGemini(prompt: string): Promise<string> {
     throw new Error("[llm] prompt is required");
   }
 
-  const client = createGeminiSdkClient();
-  const response = await client.models.generateContent({
-    model: getGeminiModel(),
-    contents: normalizedPrompt,
-  });
+  return runExternalCall(
+    {
+      service: "gemini",
+      operation: "generate_content",
+      timeoutMs: config.llm.gemini.timeoutMs,
+      retries: 1,
+      retryDelayMs: 200,
+      concurrency: 2,
+    },
+    async () => {
+      const client = createGeminiSdkClient();
+      const response = await client.models.generateContent({
+        model: getGeminiModel(),
+        contents: normalizedPrompt,
+      });
 
-  const output = response.text?.trim();
-  if (!output) {
-    throw new Error("[llm] Gemini 返回空内容");
-  }
-  return output;
+      const output = response.text?.trim();
+      if (!output) {
+        throw new Error("[llm] Gemini 返回空内容");
+      }
+      return output;
+    },
+  );
 }

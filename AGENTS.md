@@ -12,8 +12,8 @@
 ## Current status
 - Base TypeScript config in place (pnpm, tsconfig, dotenv)
 - WS adapter ready: connect/reconnect/heartbeat, event handler, schedule loop
-- Commands (root): `/ping`, `/echo <text>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
-- Commands (user): `/帮助`, `/天气 <城市>`, `/问 <问题>`
+- Commands (root): `/ping`, `/echo <text>`, `/问 <问题>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
+- Commands (user): `/帮助`, `/天气 <城市>`
 - Notice/request/meta_event handling with logging
 - Config toggles for welcome, poke reply, auto-approve group/friend requests
 - Permission model: single root user (`ROOT_USER_ID`) + user command set for all users

@@ -6,6 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "test:unit": "tsx tests/layered_unit.test.ts",
     "test:mock": "tsx tests/mock_napcat.test.ts"
   },
   "dependencies": {
