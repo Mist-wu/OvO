@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
@@ -19,6 +22,7 @@ import {
   type OneBotEvent,
 } from "../src/napcat/commands/types";
 import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
+import { ConfigStore } from "../src/storage/config_store";
 
 async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
   try {
@@ -87,6 +91,36 @@ async function main() {
     assert.equal(calculateActionRetryDelayMs(100, 1500, 1), 200);
     assert.equal(calculateActionRetryDelayMs(100, 1500, 2), 400);
     assert.equal(calculateActionRetryDelayMs(100, 1500, 8), 1500);
+  });
+
+  await runTest("config store migrates legacy payload to versioned config", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-config-"));
+    const filePath = path.join(tmpDir, "bot_config.json");
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        groupEnabled: { "12345": false },
+        cooldownMs: 777,
+      }),
+      "utf8",
+    );
+
+    const store = new ConfigStore(filePath, {
+      groupEnabled: {},
+      cooldownMs: 0,
+    });
+
+    assert.equal(store.isGroupEnabled(12345), false);
+    assert.equal(store.getCooldownMs(), 777);
+
+    const persisted = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      version?: number;
+      groupEnabled?: Record<string, boolean>;
+      cooldownMs?: number;
+    };
+    assert.equal(persisted.version, 1);
+    assert.equal(persisted.groupEnabled?.["12345"], false);
+    assert.equal(persisted.cooldownMs, 777);
   });
 
   await runTest("external call retries transient failures", async () => {

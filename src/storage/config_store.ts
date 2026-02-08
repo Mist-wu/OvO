@@ -8,6 +8,12 @@ export type PersistentConfig = {
   cooldownMs: number;
 };
 
+type StoredConfigV1 = PersistentConfig & {
+  version: 1;
+};
+
+const CURRENT_CONFIG_VERSION = 1;
+
 function normalizeGroupEnabled(value: unknown): Record<string, boolean> {
   if (!value || typeof value !== "object") return {};
   const result: Record<string, boolean> = {};
@@ -32,14 +38,44 @@ function normalizeConfig(input: Partial<PersistentConfig>, defaults: PersistentC
   };
 }
 
+function toStoredConfigV1(input: Partial<PersistentConfig>, defaults: PersistentConfig): StoredConfigV1 {
+  const normalized = normalizeConfig(input, defaults);
+  return {
+    version: 1,
+    groupEnabled: normalized.groupEnabled,
+    cooldownMs: normalized.cooldownMs,
+  };
+}
+
+function migrateConfig(raw: unknown, defaults: PersistentConfig): StoredConfigV1 {
+  if (!raw || typeof raw !== "object") {
+    return toStoredConfigV1(defaults, defaults);
+  }
+
+  const parsed = raw as Record<string, unknown>;
+  const version = parsed.version;
+
+  if (version === CURRENT_CONFIG_VERSION) {
+    return toStoredConfigV1(parsed as Partial<PersistentConfig>, defaults);
+  }
+
+  if (typeof version === "number" && version > CURRENT_CONFIG_VERSION) {
+    console.warn(
+      `[config_store] 检测到更高配置版本 version=${version}，将按 v${CURRENT_CONFIG_VERSION} 字段兼容读取`,
+    );
+  }
+
+  return toStoredConfigV1(parsed as Partial<PersistentConfig>, defaults);
+}
+
 export class ConfigStore {
-  private data: PersistentConfig;
+  private data: StoredConfigV1;
 
   constructor(
     private readonly filePath: string,
     private readonly defaults: PersistentConfig,
   ) {
-    this.data = normalizeConfig(defaults, defaults);
+    this.data = toStoredConfigV1(defaults, defaults);
     this.load();
   }
 
@@ -82,11 +118,18 @@ export class ConfigStore {
 
     try {
       const raw = fs.readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<PersistentConfig>;
-      this.data = normalizeConfig(parsed, this.defaults);
+      const parsed = JSON.parse(raw) as unknown;
+      this.data = migrateConfig(parsed, this.defaults);
+      const rawVersion =
+        parsed && typeof parsed === "object"
+          ? (parsed as { version?: unknown }).version
+          : undefined;
+      if (rawVersion !== CURRENT_CONFIG_VERSION) {
+        this.persist();
+      }
     } catch (error) {
       console.warn("[config_store] 配置文件读取失败，已回退默认配置:", error);
-      this.data = normalizeConfig(this.defaults, this.defaults);
+      this.data = toStoredConfigV1(this.defaults, this.defaults);
       this.persist();
     }
   }
