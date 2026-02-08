@@ -2,29 +2,45 @@ import { config } from "../config";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
 import { parseCommand } from "./commands/registry";
-import type { CommandExecutionContext, OneBotEvent } from "./commands/types";
+import {
+  isMessageEvent,
+  isMetaEvent,
+  isNoticeEvent,
+  isRequestEvent,
+  type CommandExecutionContext,
+  type MessageEvent,
+  type MetaEvent,
+  type NoticeEvent,
+  type OneBotEvent,
+  type RequestEvent,
+} from "./commands/types";
 import type { MessageSegment } from "./message";
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
-  switch (event.post_type) {
-    case "message":
-      await handleMessage(client, event);
-      return;
-    case "notice":
-      await handleNotice(client, event);
-      return;
-    case "request":
-      await handleRequest(client, event);
-      return;
-    case "meta_event":
-      handleMeta(event);
-      return;
-    default:
-      console.debug("[event] 未识别 post_type:", event.post_type);
+  if (isMessageEvent(event)) {
+    await handleMessage(client, event);
+    return;
   }
+
+  if (isNoticeEvent(event)) {
+    await handleNotice(client, event);
+    return;
+  }
+
+  if (isRequestEvent(event)) {
+    await handleRequest(client, event);
+    return;
+  }
+
+  if (isMetaEvent(event)) {
+    handleMeta(event);
+    return;
+  }
+
+  console.debug("[event] 未识别 post_type:", event.post_type);
 }
 
-async function handleMessage(client: NapcatClient, event: OneBotEvent): Promise<void> {
+async function handleMessage(client: NapcatClient, event: MessageEvent): Promise<void> {
   if (typeof event.user_id === "number" && event.user_id === event.self_id) {
     return;
   }
@@ -47,7 +63,8 @@ async function handleMessage(client: NapcatClient, event: OneBotEvent): Promise<
     return;
   }
 
-  const isRoot = typeof config.permissions.rootUserId === "number" && userId === config.permissions.rootUserId;
+  const isRoot =
+    typeof config.permissions.rootUserId === "number" && userId === config.permissions.rootUserId;
   const executionContext: CommandExecutionContext = {
     client,
     event,
@@ -67,7 +84,7 @@ async function handleMessage(client: NapcatClient, event: OneBotEvent): Promise<
   );
 }
 
-async function handleNotice(client: NapcatClient, event: OneBotEvent): Promise<void> {
+async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
   const { notice_type, sub_type, group_id, user_id } = event;
   if (!notice_type) return;
   console.info("[notice]", notice_type, sub_type, {
@@ -95,7 +112,7 @@ async function handleNotice(client: NapcatClient, event: OneBotEvent): Promise<v
   }
 }
 
-async function handleRequest(client: NapcatClient, event: OneBotEvent): Promise<void> {
+async function handleRequest(client: NapcatClient, event: RequestEvent): Promise<void> {
   const { request_type, sub_type, user_id, group_id, flag } = event;
   if (!request_type) return;
   console.info("[request]", request_type, sub_type, {
@@ -119,7 +136,7 @@ async function handleRequest(client: NapcatClient, event: OneBotEvent): Promise<
   }
 }
 
-function handleMeta(event: OneBotEvent): void {
+function handleMeta(event: MetaEvent): void {
   if (event.meta_event_type === "heartbeat") {
     console.debug("[meta] heartbeat");
     return;
@@ -127,7 +144,7 @@ function handleMeta(event: OneBotEvent): void {
   console.debug("[meta]", event.meta_event_type);
 }
 
-function getMessageText(event: OneBotEvent): string {
+function getMessageText(event: MessageEvent): string {
   if (typeof event.message === "string") {
     return event.message.trim();
   }
@@ -162,7 +179,7 @@ function formatTemplate(template: string, data: Record<string, unknown>): string
 
 async function sendContextText(
   client: NapcatClient,
-  event: OneBotEvent,
+  event: MessageEvent,
   text: string,
 ): Promise<void> {
   if (event.message_type === "private" && typeof event.user_id === "number") {

@@ -4,6 +4,7 @@ import WebSocket from "ws";
 import { config } from "../config";
 import { scheduleLoop } from "../utils/schedule_tasks";
 import { handleEvent } from "./handlers";
+import type { OneBotEvent } from "./commands/types";
 import { normalizeMessage, type MessageInput } from "./message";
 
 type ActionResponse = {
@@ -216,7 +217,7 @@ export class NapcatClient {
 
     if ("post_type" in event) {
       try {
-        await handleEvent(this, event as Record<string, unknown>);
+        await handleEvent(this, event as OneBotEvent);
       } catch (error) {
         console.error("事件处理失败:", error);
       }

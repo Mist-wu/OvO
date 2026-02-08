@@ -3,7 +3,7 @@ import type { MessageSegment } from "../message";
 
 export type CommandAccess = "root" | "user";
 
-export type OneBotEvent = Record<string, unknown> & {
+type OneBotEventBase = Record<string, unknown> & {
   post_type?: string;
   message_type?: string;
   notice_type?: string;
@@ -18,9 +18,53 @@ export type OneBotEvent = Record<string, unknown> & {
   message?: string | MessageSegment[];
 };
 
+export type MessageEvent = OneBotEventBase & {
+  post_type: "message";
+  message_type?: "private" | "group" | string;
+  message?: string | MessageSegment[];
+};
+
+export type NoticeEvent = OneBotEventBase & {
+  post_type: "notice";
+  notice_type?: string;
+};
+
+export type RequestEvent = OneBotEventBase & {
+  post_type: "request";
+  request_type?: string;
+};
+
+export type MetaEvent = OneBotEventBase & {
+  post_type: "meta_event";
+  meta_event_type?: string;
+};
+
+export type OneBotEvent =
+  | MessageEvent
+  | NoticeEvent
+  | RequestEvent
+  | MetaEvent
+  | OneBotEventBase;
+
+export function isMessageEvent(event: OneBotEvent): event is MessageEvent {
+  return event.post_type === "message";
+}
+
+export function isNoticeEvent(event: OneBotEvent): event is NoticeEvent {
+  return event.post_type === "notice";
+}
+
+export function isRequestEvent(event: OneBotEvent): event is RequestEvent {
+  return event.post_type === "request";
+}
+
+export function isMetaEvent(event: OneBotEvent): event is MetaEvent {
+  return event.post_type === "meta_event";
+}
+
 export type CommandExecutionContext = {
   client: NapcatClient;
-  event: OneBotEvent;
+  event: MessageEvent;
   userId: number;
   groupId?: number;
   messageType?: string;

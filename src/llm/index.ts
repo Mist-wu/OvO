@@ -1,1 +1,1 @@
-export { createGeminiSdkClient, getGeminiModel, getGeminiSetupSummary } from "./gemini";
+export { askGemini, createGeminiSdkClient, getGeminiModel, getGeminiSetupSummary } from "./gemini";

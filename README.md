@@ -38,6 +38,7 @@ TypeScript 个人机器人项目，基于 NapCat OneBot v11 正向 WebSocket。
 - user 指令（所有用户可用）：
   - `/帮助` 查看 user 指令列表
   - `/天气 <城市>` 查询天气
+  - `/问 <问题>` 使用 Gemini 问答
 
 ## 测试与构建
 - `pnpm run test:mock`：核心链路回归（连接、命令、中间件、动作重试/超时）

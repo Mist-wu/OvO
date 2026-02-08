@@ -230,6 +230,7 @@ async function main() {
   process.env.ROOT_USER_ID = "11111";
   process.env.GROUP_ENABLED_DEFAULT = "true";
   process.env.COMMAND_COOLDOWN_MS = "0";
+  process.env.GEMINI_API_KEY = "";
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();
@@ -320,11 +321,11 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
           messageToText(item.params.message) ===
-            "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
+            "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市> /问 <问题>",
       );
       assert.equal(
         messageToText(action.params.message),
-        "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市>",
+        "/ping /echo <text> /help /status /config /group on|off [group_id] /cooldown [ms] /帮助 /天气 <城市> /问 <问题>",
       );
     });
 
@@ -359,9 +360,9 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "/帮助 /天气 <城市>",
+          messageToText(item.params.message) === "/帮助 /天气 <城市> /问 <问题>",
       );
-      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市>");
+      assert.equal(messageToText(action.params.message), "/帮助 /天气 <城市> /问 <问题>");
     });
 
     await runTest("user command /天气 without location returns usage", async () => {
@@ -380,6 +381,42 @@ async function main() {
           messageToText(item.params.message) === "用法：/天气 <城市>",
       );
       assert.equal(messageToText(action.params.message), "用法：/天气 <城市>");
+    });
+
+    await runTest("user command /问 without prompt returns usage", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/问",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "用法：/问 <问题>",
+      );
+      assert.equal(messageToText(action.params.message), "用法：/问 <问题>");
+    });
+
+    await runTest("user command /问 returns config hint when key missing", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/问 你好",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message).includes("GEMINI_API_KEY"),
+      );
+      assert.equal(true, messageToText(action.params.message).includes("GEMINI_API_KEY"));
     });
 
     await runTest("weather formatter follows python template", async () => {
@@ -417,7 +454,7 @@ async function main() {
       assert.equal(formatted.includes("风况: 西南风 1级"), true);
       assert.equal(formatted.includes("空气质量: AQI 30"), true);
       assert.equal(formatted.includes("优"), true);
-      assert.equal(formatted.includes("未来天气预报:"), true);
+      assert.equal(formatted.includes("今日与未来四天天气预报:"), true);
       assert.equal(formatted.includes("周五:"), true);
       assert.equal(formatted.includes("-9°C ~ -4°C"), true);
       assert.equal(formatted.includes("数据更新于: 2026-02-06 23:07:56"), true);

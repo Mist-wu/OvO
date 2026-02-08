@@ -32,3 +32,22 @@ export function getGeminiSetupSummary(): string {
   const configured = config.llm.gemini.apiKey.trim().length > 0;
   return `llm=gemini model=${config.llm.gemini.model} configured=${configured}`;
 }
+
+export async function askGemini(prompt: string): Promise<string> {
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    throw new Error("[llm] prompt is required");
+  }
+
+  const client = createGeminiSdkClient();
+  const response = await client.models.generateContent({
+    model: getGeminiModel(),
+    contents: normalizedPrompt,
+  });
+
+  const output = response.text?.trim();
+  if (!output) {
+    throw new Error("[llm] Gemini 返回空内容");
+  }
+  return output;
+}
