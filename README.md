@@ -34,6 +34,13 @@
   - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`
   - `WEATHER_DEGRADE_ON_FAILURE`
 
+## NapCat 动作队列治理
+- 动作发送链路支持可配置并发、队列上限、每秒限流与指数退避重试。
+- 在 `.env` 中设置：
+  - `NAPCAT_ACTION_QUEUE_CONCURRENCY`, `NAPCAT_ACTION_QUEUE_MAX_SIZE`
+  - `NAPCAT_ACTION_RATE_LIMIT_PER_SECOND`
+  - `NAPCAT_ACTION_RETRY_ATTEMPTS`, `NAPCAT_ACTION_RETRY_BASE_DELAY_MS`, `NAPCAT_ACTION_RETRY_MAX_DELAY_MS`
+
 ## 外部调用治理
 - 统一治理入口：`src/utils/external_call.ts`
 - 支持超时、重试、并发门控、熔断与降级回退

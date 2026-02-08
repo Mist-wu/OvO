@@ -10,6 +10,7 @@ import {
   createSetFriendAddRequestParams,
   createSetGroupAddRequestParams,
 } from "../src/napcat/actions";
+import { calculateActionRetryDelayMs } from "../src/napcat/client";
 import {
   isMessageEvent,
   isMetaEvent,
@@ -79,6 +80,13 @@ async function main() {
 
     const payload = buildActionPayload("get_status", getStatus, "echo-1");
     assert.deepEqual(payload, { action: "get_status", params: {}, echo: "echo-1" });
+  });
+
+  await runTest("action retry delay follows exponential backoff and cap", async () => {
+    assert.equal(calculateActionRetryDelayMs(100, 1500, 0), 100);
+    assert.equal(calculateActionRetryDelayMs(100, 1500, 1), 200);
+    assert.equal(calculateActionRetryDelayMs(100, 1500, 2), 400);
+    assert.equal(calculateActionRetryDelayMs(100, 1500, 8), 1500);
   });
 
   await runTest("external call retries transient failures", async () => {

@@ -219,12 +219,41 @@ async function waitForClientOpen(client: unknown, timeoutMs = 1000) {
   throw new Error("client open timeout");
 }
 
+type ActionQueueOverrides = Partial<{
+  concurrency: number;
+  maxSize: number;
+  rateLimitPerSecond: number;
+  retryAttempts: number;
+  retryBaseDelayMs: number;
+  retryMaxDelayMs: number;
+}>;
+
+async function withActionQueueOverrides<T>(
+  overrides: ActionQueueOverrides,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const { config } = await import("../src/config");
+  const previous = { ...config.napcat.actionQueue };
+  Object.assign(config.napcat.actionQueue, overrides);
+  try {
+    return await fn();
+  } finally {
+    Object.assign(config.napcat.actionQueue, previous);
+  }
+}
+
 async function main() {
   const server = await createMockServer();
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-"));
   process.env.NAPCAT_WS_URL = `ws://127.0.0.1:${server.port}`;
   process.env.NAPCAT_ACTION_TIMEOUT_MS = "200";
   process.env.NAPCAT_ACTION_LOG_ENABLED = "false";
+  process.env.NAPCAT_ACTION_QUEUE_CONCURRENCY = "1";
+  process.env.NAPCAT_ACTION_QUEUE_MAX_SIZE = "200";
+  process.env.NAPCAT_ACTION_RATE_LIMIT_PER_SECOND = "20";
+  process.env.NAPCAT_ACTION_RETRY_ATTEMPTS = "1";
+  process.env.NAPCAT_ACTION_RETRY_BASE_DELAY_MS = "200";
+  process.env.NAPCAT_ACTION_RETRY_MAX_DELAY_MS = "1500";
   process.env.SCHEDULE_INTERVAL_MS = "600000";
   process.env.BOT_CONFIG_PATH = path.join(tmpDir, "config.json");
   process.env.ROOT_USER_ID = "11111";
@@ -651,6 +680,77 @@ async function main() {
       assert.ok(delayedAction);
       assert.ok(followAction);
       assert.equal(true, followAction.receivedAt - delayedAction.receivedAt >= 80);
+    });
+
+    await runTest("action queue concurrency can be increased", async () => {
+      await withActionQueueOverrides(
+        {
+          concurrency: 2,
+          rateLimitPerSecond: 200,
+          retryAttempts: 0,
+        },
+        async () => {
+          const tunedClient = new NapcatClient();
+          tunedClient.connect();
+          await waitForClientOpen(tunedClient);
+
+          try {
+            server.actions.length = 0;
+            await Promise.all([
+              tunedClient.sendAction("delayed_ok", { seq: "c1" }),
+              tunedClient.sendAction("delayed_ok", { seq: "c2" }),
+            ]);
+
+            const delayedActions = server.actions
+              .filter(
+                (item) =>
+                  item.action === "delayed_ok" &&
+                  (item.params.seq === "c1" || item.params.seq === "c2"),
+              )
+              .sort((a, b) => a.receivedAt - b.receivedAt);
+
+            assert.equal(delayedActions.length, 2);
+            assert.equal(Math.abs(delayedActions[1].receivedAt - delayedActions[0].receivedAt) < 80, true);
+          } finally {
+            await tunedClient.shutdown();
+            await delay(50);
+          }
+        },
+      );
+    });
+
+    await runTest("action queue rate limit throttles bursts", async () => {
+      await withActionQueueOverrides(
+        {
+          concurrency: 3,
+          rateLimitPerSecond: 2,
+          retryAttempts: 0,
+        },
+        async () => {
+          const tunedClient = new NapcatClient();
+          tunedClient.connect();
+          await waitForClientOpen(tunedClient);
+
+          try {
+            server.actions.length = 0;
+            await Promise.all([
+              tunedClient.sendAction("rate_limit_probe", { seq: 1 }),
+              tunedClient.sendAction("rate_limit_probe", { seq: 2 }),
+              tunedClient.sendAction("rate_limit_probe", { seq: 3 }),
+            ]);
+
+            const probes = server.actions
+              .filter((item) => item.action === "rate_limit_probe")
+              .sort((a, b) => a.receivedAt - b.receivedAt);
+
+            assert.equal(probes.length, 3);
+            assert.equal(probes[2].receivedAt - probes[0].receivedAt >= 850, true);
+          } finally {
+            await tunedClient.shutdown();
+            await delay(50);
+          }
+        },
+      );
     });
 
     await runTest("action timeout retries once on transient failure", async () => {

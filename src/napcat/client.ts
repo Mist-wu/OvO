@@ -45,6 +45,29 @@ type RuntimeStatus = {
   lastPongAt: number;
 };
 
+function normalizePositiveInt(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  const normalized = Math.floor(value);
+  return normalized > 0 ? normalized : fallback;
+}
+
+function normalizeNonNegativeInt(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  const normalized = Math.floor(value);
+  return normalized >= 0 ? normalized : fallback;
+}
+
+export function calculateActionRetryDelayMs(
+  baseDelayMs: number,
+  maxDelayMs: number,
+  retryIndex: number,
+): number {
+  const normalizedRetryIndex = Math.max(0, Math.floor(retryIndex));
+  const factor = 2 ** normalizedRetryIndex;
+  const delayMs = baseDelayMs * factor;
+  return Math.min(delayMs, maxDelayMs);
+}
+
 export class NapcatClient {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -55,8 +78,29 @@ export class NapcatClient {
   private pendingActions = new Map<string, PendingAction>();
   private actionQueue: QueuedAction[] = [];
   private actionInFlight = 0;
-  private readonly actionQueueConcurrency = 1;
-  private readonly actionRetryDelayMs = 200;
+  private readonly actionQueueConcurrency = normalizePositiveInt(
+    config.napcat.actionQueue.concurrency,
+    1,
+  );
+  private readonly actionQueueMaxSize = normalizePositiveInt(config.napcat.actionQueue.maxSize, 200);
+  private readonly actionRateLimitPerSecond = normalizePositiveInt(
+    config.napcat.actionQueue.rateLimitPerSecond,
+    20,
+  );
+  private readonly actionRetryAttempts = normalizeNonNegativeInt(
+    config.napcat.actionQueue.retryAttempts,
+    1,
+  );
+  private readonly actionRetryBaseDelayMs = normalizePositiveInt(
+    config.napcat.actionQueue.retryBaseDelayMs,
+    200,
+  );
+  private readonly actionRetryMaxDelayMs = normalizePositiveInt(
+    config.napcat.actionQueue.retryMaxDelayMs,
+    1500,
+  );
+  private actionSendTimestamps: number[] = [];
+  private rateLimitLock: Promise<void> = Promise.resolve();
 
   connect(): void {
     if (this.shuttingDown) return;
@@ -135,6 +179,11 @@ export class NapcatClient {
     if (!this.isWsOpen()) {
       throw new Error("WebSocket 未连接");
     }
+    if (this.actionQueue.length >= this.actionQueueMaxSize) {
+      throw new Error(
+        `[action] queue_overflow action=${action} size=${this.actionQueue.length} max=${this.actionQueueMaxSize}`,
+      );
+    }
 
     return new Promise<ActionResponse>((resolve, reject) => {
       this.actionQueue.push({
@@ -207,6 +256,8 @@ export class NapcatClient {
     params: Record<string, unknown> = {},
     echo: string = randomUUID(),
   ): Promise<void> {
+    await this.reserveRateLimitSlot();
+
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error("WebSocket 未连接");
@@ -385,7 +436,7 @@ export class NapcatClient {
   ): Promise<ActionResponse> {
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt <= 1; attempt += 1) {
+    for (let attempt = 0; attempt <= this.actionRetryAttempts; attempt += 1) {
       const echo = attempt === 0 ? baseEcho : `${baseEcho}:r${attempt}`;
 
       try {
@@ -394,12 +445,13 @@ export class NapcatClient {
         const normalizedError = this.toError(error);
         lastError = normalizedError;
 
-        if (attempt === 0 && this.shouldRetryAction(normalizedError)) {
+        if (attempt < this.actionRetryAttempts && this.shouldRetryAction(normalizedError)) {
+          const delayMs = this.getRetryDelayMs(attempt);
           this.logAction(
             "warn",
-            `[action] retry action=${action} reason=${normalizedError.message}`,
+            `[action] retry action=${action} next_attempt=${attempt + 2} delay_ms=${delayMs} reason=${normalizedError.message}`,
           );
-          await this.delayRetry();
+          await this.delayRetry(delayMs);
           continue;
         }
 
@@ -410,11 +462,13 @@ export class NapcatClient {
     throw lastError ?? new Error(`[action] action=${action} unknown error`);
   }
 
-  private sendActionOnce(
+  private async sendActionOnce(
     action: string,
     params: Record<string, unknown>,
     echo: string,
   ): Promise<ActionResponse> {
+    await this.reserveRateLimitSlot();
+
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error("WebSocket 未连接");
@@ -558,9 +612,38 @@ export class NapcatClient {
     );
   }
 
-  private async delayRetry(): Promise<void> {
+  private getRetryDelayMs(currentAttempt: number): number {
+    return calculateActionRetryDelayMs(
+      this.actionRetryBaseDelayMs,
+      this.actionRetryMaxDelayMs,
+      currentAttempt,
+    );
+  }
+
+  private async reserveRateLimitSlot(): Promise<void> {
+    const task = this.rateLimitLock.then(() => this.waitForRateLimitWindow());
+    this.rateLimitLock = task.catch(() => undefined);
+    await task;
+  }
+
+  private async waitForRateLimitWindow(): Promise<void> {
+    while (true) {
+      const now = Date.now();
+      this.actionSendTimestamps = this.actionSendTimestamps.filter((ts) => now - ts < 1000);
+      if (this.actionSendTimestamps.length < this.actionRateLimitPerSecond) {
+        this.actionSendTimestamps.push(now);
+        return;
+      }
+
+      const oldest = this.actionSendTimestamps[0];
+      const waitMs = Math.max(1, 1000 - (now - oldest));
+      await this.delayRetry(waitMs);
+    }
+  }
+
+  private async delayRetry(delayMs: number): Promise<void> {
     await new Promise<void>((resolve) => {
-      setTimeout(resolve, this.actionRetryDelayMs);
+      setTimeout(resolve, delayMs);
     });
   }
 

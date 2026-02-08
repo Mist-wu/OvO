@@ -54,6 +54,14 @@ export const config = {
       enabled: booleanFromEnv(process.env.NAPCAT_ACTION_LOG_ENABLED, true),
       level: actionLogLevelFromEnv(process.env.NAPCAT_ACTION_LOG_LEVEL, "info"),
     },
+    actionQueue: {
+      concurrency: numberFromEnv(process.env.NAPCAT_ACTION_QUEUE_CONCURRENCY, 1),
+      maxSize: numberFromEnv(process.env.NAPCAT_ACTION_QUEUE_MAX_SIZE, 200),
+      rateLimitPerSecond: numberFromEnv(process.env.NAPCAT_ACTION_RATE_LIMIT_PER_SECOND, 20),
+      retryAttempts: numberFromEnv(process.env.NAPCAT_ACTION_RETRY_ATTEMPTS, 1),
+      retryBaseDelayMs: numberFromEnv(process.env.NAPCAT_ACTION_RETRY_BASE_DELAY_MS, 200),
+      retryMaxDelayMs: numberFromEnv(process.env.NAPCAT_ACTION_RETRY_MAX_DELAY_MS, 1500),
+    },
   },
   scheduler: {
     intervalMs: numberFromEnv(process.env.SCHEDULE_INTERVAL_MS, 60000),
