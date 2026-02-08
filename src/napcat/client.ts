@@ -3,19 +3,20 @@ import WebSocket from "ws";
 
 import { config } from "../config";
 import { scheduleLoop } from "../utils/schedule_tasks";
+import {
+  createGetStatusParams,
+  createSendGroupMsgParams,
+  createSendPrivateMsgParams,
+  createSetFriendAddRequestParams,
+  createSetGroupAddRequestParams,
+  type ActionData,
+  type ActionParams,
+  type ActionResponse,
+  type NapcatActionName,
+} from "./actions";
 import { handleEvent } from "./handlers";
 import type { OneBotEvent } from "./commands/types";
 import { normalizeMessage, type MessageInput } from "./message";
-
-type ActionResponse = {
-  status?: string;
-  retcode?: number;
-  data?: unknown;
-  msg?: string;
-  wording?: string;
-  echo?: string;
-  [key: string]: unknown;
-};
 
 type ActionLogLevel = "error" | "warn" | "info" | "debug";
 
@@ -116,6 +117,16 @@ export class NapcatClient {
     }
   }
 
+  sendAction<TAction extends NapcatActionName>(
+    action: TAction,
+    params: ActionParams<TAction>,
+    echo?: string,
+  ): Promise<ActionResponse<ActionData<TAction>>>;
+  sendAction(
+    action: string,
+    params?: Record<string, unknown>,
+    echo?: string,
+  ): Promise<ActionResponse>;
   async sendAction(
     action: string,
     params: Record<string, unknown> = {},
@@ -137,6 +148,21 @@ export class NapcatClient {
     });
   }
 
+  sendMessage(options: {
+    userId: number;
+    groupId?: undefined;
+    message: MessageInput;
+  }): Promise<ActionResponse<ActionData<"send_private_msg">>>;
+  sendMessage(options: {
+    userId?: undefined;
+    groupId: number;
+    message: MessageInput;
+  }): Promise<ActionResponse<ActionData<"send_group_msg">>>;
+  sendMessage(options: {
+    userId?: number;
+    groupId?: number;
+    message: MessageInput;
+  }): Promise<ActionResponse>;
   async sendMessage(options: {
     userId?: number;
     groupId?: number;
@@ -150,16 +176,32 @@ export class NapcatClient {
     }
 
     if (typeof groupId === "number") {
-      return this.sendAction("send_group_msg", { group_id: groupId, message: messageSegments });
+      return this.sendAction(
+        "send_group_msg",
+        createSendGroupMsgParams(groupId, messageSegments),
+      );
     }
 
     if (typeof userId === "number") {
-      return this.sendAction("send_private_msg", { user_id: userId, message: messageSegments });
+      return this.sendAction(
+        "send_private_msg",
+        createSendPrivateMsgParams(userId, messageSegments),
+      );
     }
 
     throw new Error("sendMessage 需要 groupId 或 userId");
   }
 
+  sendActionNoWait<TAction extends NapcatActionName>(
+    action: TAction,
+    params: ActionParams<TAction>,
+    echo?: string,
+  ): Promise<void>;
+  sendActionNoWait(
+    action: string,
+    params?: Record<string, unknown>,
+    echo?: string,
+  ): Promise<void>;
   async sendActionNoWait(
     action: string,
     params: Record<string, unknown> = {},
@@ -182,12 +224,36 @@ export class NapcatClient {
     });
   }
 
-  sendPrivateText(userId: number, message: string): Promise<ActionResponse> {
+  sendPrivateText(
+    userId: number,
+    message: string,
+  ): Promise<ActionResponse<ActionData<"send_private_msg">>> {
     return this.sendMessage({ userId, message });
   }
 
-  sendGroupText(groupId: number, message: string): Promise<ActionResponse> {
+  sendGroupText(
+    groupId: number,
+    message: string,
+  ): Promise<ActionResponse<ActionData<"send_group_msg">>> {
     return this.sendMessage({ groupId, message });
+  }
+
+  getStatus(): Promise<ActionResponse<ActionData<"get_status">>> {
+    return this.sendAction("get_status", createGetStatusParams());
+  }
+
+  approveGroupRequest(
+    flag: string,
+    subType: string | undefined,
+  ): Promise<ActionResponse<ActionData<"set_group_add_request">>> {
+    return this.sendAction(
+      "set_group_add_request",
+      createSetGroupAddRequestParams(flag, subType, true),
+    );
+  }
+
+  approveFriendRequest(flag: string): Promise<ActionResponse<ActionData<"set_friend_add_request">>> {
+    return this.sendAction("set_friend_add_request", createSetFriendAddRequestParams(flag, true));
   }
 
   getRuntimeStatus(): RuntimeStatus {

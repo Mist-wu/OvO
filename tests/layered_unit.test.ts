@@ -3,6 +3,14 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
 import {
+  buildActionPayload,
+  createGetStatusParams,
+  createSendGroupMsgParams,
+  createSendPrivateMsgParams,
+  createSetFriendAddRequestParams,
+  createSetGroupAddRequestParams,
+} from "../src/napcat/actions";
+import {
   isMessageEvent,
   isMetaEvent,
   isNoticeEvent,
@@ -49,6 +57,28 @@ async function main() {
     assert.ok(helpCommand);
     assert.equal(helpCommand?.definition.name, "user_help");
     assert.equal(helpCommand?.definition.access, "user");
+  });
+
+  await runTest("action helpers produce expected payloads", async () => {
+    const message = [{ type: "text", data: { text: "hello" } }];
+
+    const privateParams = createSendPrivateMsgParams(123, message);
+    assert.deepEqual(privateParams, { user_id: 123, message });
+
+    const groupParams = createSendGroupMsgParams(456, message);
+    assert.deepEqual(groupParams, { group_id: 456, message });
+
+    const getStatus = createGetStatusParams();
+    assert.deepEqual(getStatus, {});
+
+    const groupRequest = createSetGroupAddRequestParams("flag1", "add", true);
+    assert.deepEqual(groupRequest, { flag: "flag1", sub_type: "add", approve: true });
+
+    const friendRequest = createSetFriendAddRequestParams("flag2", true);
+    assert.deepEqual(friendRequest, { flag: "flag2", approve: true });
+
+    const payload = buildActionPayload("get_status", getStatus, "echo-1");
+    assert.deepEqual(payload, { action: "get_status", params: {}, echo: "echo-1" });
   });
 
   await runTest("external call retries transient failures", async () => {

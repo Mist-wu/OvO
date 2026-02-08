@@ -121,18 +121,11 @@ async function handleRequest(client: NapcatClient, event: RequestEvent): Promise
   });
 
   if (request_type === "group" && config.requests.autoApproveGroup && flag) {
-    await client.sendAction("set_group_add_request", {
-      flag,
-      sub_type,
-      approve: true,
-    });
+    await client.approveGroupRequest(flag, sub_type);
   }
 
   if (request_type === "friend" && config.requests.autoApproveFriend && flag) {
-    await client.sendAction("set_friend_add_request", {
-      flag,
-      approve: true,
-    });
+    await client.approveFriendRequest(flag);
   }
 }
 
