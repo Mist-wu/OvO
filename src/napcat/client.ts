@@ -43,6 +43,9 @@ type RuntimeStatus = {
   queuedActions: number;
   inFlightActions: number;
   lastPongAt: number;
+  queueOverflowCount: number;
+  retryCount: number;
+  rateLimitWaitMsTotal: number;
 };
 
 function normalizePositiveInt(value: number, fallback: number): number {
@@ -101,6 +104,9 @@ export class NapcatClient {
   );
   private actionSendTimestamps: number[] = [];
   private rateLimitLock: Promise<void> = Promise.resolve();
+  private queueOverflowCount = 0;
+  private retryCount = 0;
+  private rateLimitWaitMsTotal = 0;
 
   connect(): void {
     if (this.shuttingDown) return;
@@ -180,6 +186,7 @@ export class NapcatClient {
       throw new Error("WebSocket 未连接");
     }
     if (this.actionQueue.length >= this.actionQueueMaxSize) {
+      this.queueOverflowCount += 1;
       throw new Error(
         `[action] queue_overflow action=${action} size=${this.actionQueue.length} max=${this.actionQueueMaxSize}`,
       );
@@ -315,6 +322,9 @@ export class NapcatClient {
       queuedActions: this.actionQueue.length,
       inFlightActions: this.actionInFlight,
       lastPongAt: this.lastPongAt,
+      queueOverflowCount: this.queueOverflowCount,
+      retryCount: this.retryCount,
+      rateLimitWaitMsTotal: this.rateLimitWaitMsTotal,
     };
   }
 
@@ -447,6 +457,7 @@ export class NapcatClient {
 
         if (attempt < this.actionRetryAttempts && this.shouldRetryAction(normalizedError)) {
           const delayMs = this.getRetryDelayMs(attempt);
+          this.retryCount += 1;
           this.logAction(
             "warn",
             `[action] retry action=${action} next_attempt=${attempt + 2} delay_ms=${delayMs} reason=${normalizedError.message}`,
@@ -637,6 +648,7 @@ export class NapcatClient {
 
       const oldest = this.actionSendTimestamps[0];
       const waitMs = Math.max(1, 1000 - (now - oldest));
+      this.rateLimitWaitMsTotal += waitMs;
       await this.delayRetry(waitMs);
     }
   }

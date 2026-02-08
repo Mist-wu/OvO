@@ -107,7 +107,10 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         await context.sendText(
           `connected=${runtime.connected} reconnecting=${runtime.reconnecting} ` +
             `inflight=${runtime.inFlightActions} queued=${runtime.queuedActions} ` +
-            `pending=${runtime.pendingActions} pong_age_ms=${lastPongAgeMs}`,
+            `pending=${runtime.pendingActions} pong_age_ms=${lastPongAgeMs} ` +
+            `queue_overflow_count=${runtime.queueOverflowCount} ` +
+            `retry_count=${runtime.retryCount} ` +
+            `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
         );
       },
     }),

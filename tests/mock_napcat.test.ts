@@ -373,7 +373,11 @@ async function main() {
           item.params.user_id === 11111 &&
           messageToText(item.params.message).includes("connected=true"),
       );
-      assert.equal(true, messageToText(action.params.message).includes("pending="));
+      const statusText = messageToText(action.params.message);
+      assert.equal(true, statusText.includes("pending="));
+      assert.equal(true, statusText.includes("queue_overflow_count="));
+      assert.equal(true, statusText.includes("retry_count="));
+      assert.equal(true, statusText.includes("rate_limit_wait_ms_total="));
     });
 
     await runTest("user command /帮助 is available to non-root users", async () => {
@@ -682,6 +686,39 @@ async function main() {
       assert.equal(true, followAction.receivedAt - delayedAction.receivedAt >= 80);
     });
 
+    await runTest("action queue overflow increments runtime counter", async () => {
+      await withActionQueueOverrides(
+        {
+          concurrency: 1,
+          maxSize: 1,
+          rateLimitPerSecond: 200,
+          retryAttempts: 0,
+        },
+        async () => {
+          const tunedClient = new NapcatClient();
+          tunedClient.connect();
+          await waitForClientOpen(tunedClient);
+
+          try {
+            const first = tunedClient.sendAction("delayed_ok", { seq: "q1" });
+            const second = tunedClient.sendAction("delayed_ok", { seq: "q2" });
+
+            await assert.rejects(
+              () => tunedClient.sendAction("get_status", { seq: "overflow" }),
+              /queue_overflow/,
+            );
+
+            await Promise.all([first, second]);
+            const runtime = tunedClient.getRuntimeStatus();
+            assert.equal(runtime.queueOverflowCount >= 1, true);
+          } finally {
+            await tunedClient.shutdown();
+            await delay(50);
+          }
+        },
+      );
+    });
+
     await runTest("action queue concurrency can be increased", async () => {
       await withActionQueueOverrides(
         {
@@ -745,6 +782,8 @@ async function main() {
 
             assert.equal(probes.length, 3);
             assert.equal(probes[2].receivedAt - probes[0].receivedAt >= 850, true);
+            const runtime = tunedClient.getRuntimeStatus();
+            assert.equal(runtime.rateLimitWaitMsTotal >= 850, true);
           } finally {
             await tunedClient.shutdown();
             await delay(50);
@@ -755,6 +794,7 @@ async function main() {
 
     await runTest("action timeout retries once on transient failure", async () => {
       server.actions.length = 0;
+      const retryCountBefore = client.getRuntimeStatus().retryCount;
 
       const response = await client.sendAction("flaky_timeout_once", { marker: 1 });
       assert.equal(response.status, "ok");
@@ -763,6 +803,8 @@ async function main() {
         (item) => item.action === "flaky_timeout_once" && item.params.marker === 1,
       );
       assert.equal(sent.length, 2);
+      const retryCountAfter = client.getRuntimeStatus().retryCount;
+      assert.equal(retryCountAfter > retryCountBefore, true);
     });
 
     await runTest("action timeout rejects", async () => {
