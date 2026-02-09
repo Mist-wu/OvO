@@ -5,6 +5,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
+import { resolveVisualInputs } from "../src/chat/media";
 import { decideTrigger } from "../src/chat/trigger";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import {
@@ -117,6 +118,40 @@ async function main() {
     );
     assert.equal(notTriggered.shouldReply, false);
     assert.equal(notTriggered.reason, "not_triggered");
+
+    const privateImageOnly = decideTrigger(
+      {
+        scope: "private",
+        userId: 5,
+        text: "",
+        segments: [
+          {
+            type: "image",
+            data: {
+              file: "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+            },
+          },
+        ],
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(privateImageOnly.shouldReply, true);
+    assert.equal(privateImageOnly.reason, "private_default");
+  });
+
+  await runTest("resolve visual inputs supports data-uri gif", async () => {
+    const visuals = await resolveVisualInputs([
+      {
+        type: "image",
+        data: {
+          file: "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+        },
+      },
+    ]);
+
+    assert.equal(visuals.length, 1);
+    assert.equal(visuals[0].mimeType, "image/gif");
+    assert.equal(visuals[0].dataBase64.length > 0, true);
   });
 
   await runTest("in-memory session store keeps sliding window", async () => {

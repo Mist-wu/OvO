@@ -101,6 +101,10 @@ export const config = {
     emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
     maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 300),
     personaName: process.env.CHAT_PERSONA_NAME?.trim() || "小o",
+    mediaEnabled: booleanFromEnv(process.env.CHAT_MEDIA_ENABLED, true),
+    mediaMaxImages: numberFromEnv(process.env.CHAT_MEDIA_MAX_IMAGES, 2),
+    mediaFetchTimeoutMs: numberFromEnv(process.env.CHAT_MEDIA_FETCH_TIMEOUT_MS, 12000),
+    mediaMaxBytes: numberFromEnv(process.env.CHAT_MEDIA_MAX_BYTES, 5 * 1024 * 1024),
   },
   llm: {
     gemini: {

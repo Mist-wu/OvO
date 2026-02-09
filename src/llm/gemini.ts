@@ -1,7 +1,12 @@
-import { GoogleGenAI } from "@google/genai";
+import { createPartFromBase64, createPartFromText, GoogleGenAI } from "@google/genai";
 
 import { config } from "../config";
 import { runExternalCall, type ExternalCallError } from "../utils/external_call";
+
+export type GeminiInlineImage = {
+  mimeType: string;
+  dataBase64: string;
+};
 
 function normalizeBaseUrl(input: string): string | undefined {
   const trimmed = input.trim();
@@ -35,10 +40,32 @@ export function getGeminiSetupSummary(): string {
 }
 
 export async function askGemini(prompt: string): Promise<string> {
-  const normalizedPrompt = prompt.trim();
+  return askGeminiWithImages({
+    prompt,
+    inlineImages: [],
+  });
+}
+
+export async function askGeminiWithImages(input: {
+  prompt: string;
+  inlineImages: GeminiInlineImage[];
+}): Promise<string> {
+  const normalizedPrompt = input.prompt.trim();
   if (!normalizedPrompt) {
     throw new Error("[llm] prompt is required");
   }
+
+  const normalizedImages = input.inlineImages.filter((item) => {
+    return Boolean(item?.mimeType && item?.dataBase64);
+  });
+
+  return runGeminiCall(normalizedPrompt, normalizedImages);
+}
+
+async function runGeminiCall(
+  normalizedPrompt: string,
+  inlineImages: GeminiInlineImage[],
+): Promise<string> {
   const circuitBreaker = {
     enabled: config.external.circuitBreakerEnabled,
     key: "gemini",
@@ -59,9 +86,13 @@ export async function askGemini(prompt: string): Promise<string> {
     },
     async () => {
       const client = createGeminiSdkClient();
+      const parts = [
+        createPartFromText(normalizedPrompt),
+        ...inlineImages.map((item) => createPartFromBase64(item.dataBase64, item.mimeType)),
+      ];
       const response = await client.models.generateContent({
         model: getGeminiModel(),
-        contents: normalizedPrompt,
+        contents: parts,
       });
 
       const output = response.text?.trim();

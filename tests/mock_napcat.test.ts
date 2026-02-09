@@ -263,6 +263,8 @@ async function main() {
   process.env.CHAT_ENABLED = "true";
   process.env.CHAT_BOT_ALIASES = "小o,ovo";
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
+  process.env.CHAT_MEDIA_ENABLED = "true";
+  process.env.CHAT_MEDIA_MAX_IMAGES = "2";
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();
@@ -555,6 +557,31 @@ async function main() {
       );
     });
 
+    await runTest("private image message triggers multimodal chat fallback", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 33335,
+        self_id: 99999,
+        message: [
+          {
+            type: "image",
+            data: {
+              file: "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+            },
+          },
+        ],
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 33335 &&
+          messageToText(item.params.message) === "刚卡了",
+      );
+      assert.equal(messageToText(action.params.message), "刚卡了");
+    });
+
     await runTest("permission middleware blocks non-root users", async () => {
       server.sendEvent({
         post_type: "message",
@@ -645,22 +672,27 @@ async function main() {
     });
 
     await runTest("cooldown middleware limits repeated commands", async () => {
+      const waitRootPrivateText = async (
+        matcher: (text: string) => boolean,
+      ) => {
+        await server.waitForAction(
+          (item) =>
+            item.action === "send_private_msg" &&
+            item.params.user_id === 11111 &&
+            matcher(messageToText(item.params.message)),
+          2500,
+        );
+      };
+
       server.actions.length = 0;
       server.sendEvent({
         post_type: "message",
         message_type: "private",
         user_id: 11111,
         self_id: 99999,
-        message: "/cooldown 200",
+        message: "/cooldown 1500",
       });
-
-      const setCooldown = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message) === "已设置冷却时间 200ms",
-      );
-      assert.equal(messageToText(setCooldown.params.message), "已设置冷却时间 200ms");
+      await waitRootPrivateText((text) => text === "已设置冷却时间 1500ms");
 
       server.sendEvent({
         post_type: "message",
@@ -669,14 +701,7 @@ async function main() {
         self_id: 99999,
         message: "/ping",
       });
-
-      const first = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message) === "pong",
-      );
-      assert.equal(messageToText(first.params.message), "pong");
+      await waitRootPrivateText((text) => text === "pong");
 
       server.sendEvent({
         post_type: "message",
@@ -685,14 +710,7 @@ async function main() {
         self_id: 99999,
         message: "/ping",
       });
-
-      const cooldownHit = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message).startsWith("冷却中"),
-      );
-      assert.equal(true, messageToText(cooldownHit.params.message).startsWith("冷却中"));
+      await waitRootPrivateText((text) => text.startsWith("冷却中"));
 
       server.sendEvent({
         post_type: "message",
@@ -701,14 +719,7 @@ async function main() {
         self_id: 99999,
         message: "/cooldown 0",
       });
-
-      const resetCooldown = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message) === "已设置冷却时间 0ms",
-      );
-      assert.equal(messageToText(resetCooldown.params.message), "已设置冷却时间 0ms");
+      await waitRootPrivateText((text) => text === "已设置冷却时间 0ms");
     });
 
     await runTest("action queue serializes send order", async () => {

@@ -1,4 +1,5 @@
 import type { MessageSegment } from "../napcat/message";
+import { hasVisualSegments } from "./media";
 import type { ChatEvent, TriggerDecision } from "./types";
 
 function hasAtSelf(segments: MessageSegment[] | undefined, selfId: number | undefined): boolean {
@@ -34,9 +35,11 @@ function includesAlias(text: string, aliases: string[]): boolean {
 
 export function decideTrigger(event: ChatEvent, aliases: string[]): TriggerDecision {
   const text = event.text.trim();
+  const hasVisual = hasVisualSegments(event.segments);
+  const hasContent = text.length > 0 || hasVisual;
 
   if (event.scope === "private") {
-    if (!text) {
+    if (!hasContent) {
       return { shouldReply: false, reason: "empty_text" };
     }
     return { shouldReply: true, reason: "private_default" };
@@ -54,7 +57,7 @@ export function decideTrigger(event: ChatEvent, aliases: string[]): TriggerDecis
     return { shouldReply: true, reason: "named_bot" };
   }
 
-  if (!text) {
+  if (!hasContent) {
     return { shouldReply: false, reason: "empty_text" };
   }
 

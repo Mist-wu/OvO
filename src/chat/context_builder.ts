@@ -6,6 +6,7 @@ export type BuildContextInput = {
   history: SessionMessage[];
   userText: string;
   scope: "group" | "private";
+  mediaCount: number;
 };
 
 function formatHistory(history: SessionMessage[]): string {
@@ -19,13 +20,17 @@ export function buildPrompt(input: BuildContextInput): string {
   const scene = input.scope === "group" ? "群聊" : "私聊";
   const personaPrompt = buildPersonaPrompt(input.persona);
   const historyText = formatHistory(input.history);
+  const normalizedUserText = input.userText.trim() || "(无文本，仅图片/表情包)";
+  const mediaHint =
+    input.mediaCount > 0 ? `附加媒体数量：${input.mediaCount}（可能为图片或GIF）` : "附加媒体数量：0";
 
   return [
     personaPrompt,
     `场景：${scene}`,
+    mediaHint,
     "以下是最近会话（按时间顺序）：",
     historyText,
-    `用户当前消息：${input.userText}`,
+    `用户当前消息：${normalizedUserText}`,
     "请直接输出回复正文，不要附加解释。",
   ].join("\n\n");
 }

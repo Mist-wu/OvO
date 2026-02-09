@@ -13,6 +13,12 @@ export type ChatEvent = {
   segments?: MessageSegment[];
 };
 
+export type ChatVisualInput = {
+  source: string;
+  mimeType: string;
+  dataBase64: string;
+};
+
 export type TriggerReason =
   | "private_default"
   | "mentioned"

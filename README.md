@@ -60,11 +60,12 @@
   - `/帮助` 查看 user 指令列表
   - `/天气 <城市>` 查询天气
 
-## 聊天模式（Phase A）
+## 聊天模式（Phase A + B-1）
 - 非指令消息会进入聊天编排器：
   - 私聊：默认回复
   - 群聊：仅在 `@bot` / `reply` / 点名别名 时回复（默认别名：`小o`,`ovo`）
 - 会话记忆为内存滑动窗口（重启后清空），用于保持短期上下文连续性
+- 支持图片/GIF 输入解析（`image` 消息段），会作为多模态输入交给 Gemini
 - Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
 
 ### 聊天配置
@@ -75,6 +76,10 @@
 - `CHAT_EMPTY_REPLY_FALLBACK`：聊天降级文案
 - `CHAT_MAX_REPLY_CHARS`：最大回复长度
 - `CHAT_PERSONA_NAME`：单一全局人格名称
+- `CHAT_MEDIA_ENABLED`：是否启用图片/GIF解析
+- `CHAT_MEDIA_MAX_IMAGES`：单次最多解析图片数量
+- `CHAT_MEDIA_FETCH_TIMEOUT_MS`：远程图片抓取超时
+- `CHAT_MEDIA_MAX_BYTES`：单图最大字节数
 
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
