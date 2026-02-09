@@ -260,6 +260,9 @@ async function main() {
   process.env.GROUP_ENABLED_DEFAULT = "true";
   process.env.COMMAND_COOLDOWN_MS = "0";
   process.env.GEMINI_API_KEY = "";
+  process.env.CHAT_ENABLED = "true";
+  process.env.CHAT_BOT_ALIASES = "小o,ovo";
+  process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();
@@ -509,6 +512,47 @@ async function main() {
       assert.equal(formatted.includes("周五:"), true);
       assert.equal(formatted.includes("-9°C ~ -4°C"), true);
       assert.equal(formatted.includes("数据更新于: 2026-02-06 23:07:56"), true);
+    });
+
+    await runTest("group named-bot message triggers chat fallback", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65432,
+        user_id: 33333,
+        self_id: 99999,
+        message: "小o 在吗",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 65432 &&
+          messageToText(item.params.message) === "刚卡了",
+      );
+      assert.equal(messageToText(action.params.message), "刚卡了");
+    });
+
+    await runTest("group plain text without trigger stays silent", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65433,
+        user_id: 33334,
+        self_id: 99999,
+        message: "今天吃什么",
+      });
+
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) =>
+              item.action === "send_group_msg" &&
+              item.params.group_id === 65433,
+            180,
+          ),
+        /waitForAction timeout/,
+      );
     });
 
     await runTest("permission middleware blocks non-root users", async () => {

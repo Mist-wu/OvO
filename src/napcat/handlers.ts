@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { chatOrchestrator } from "../chat";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
 import { parseCommand } from "./commands/registry";
@@ -55,11 +56,13 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
 
   const message = getMessageText(event);
   if (!message) {
+    await handleChatMessage(client, event, "");
     return;
   }
 
   const command = parseCommand(message);
   if (!command) {
+    await handleChatMessage(client, event, message);
     return;
   }
 
@@ -82,6 +85,39 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
       await command.definition.execute(executionContext, command.payload);
     },
   );
+}
+
+async function handleChatMessage(client: NapcatClient, event: MessageEvent, message: string): Promise<void> {
+  const userId = event.user_id;
+  if (typeof userId !== "number") return;
+
+  const groupId = typeof event.group_id === "number" ? event.group_id : undefined;
+  const scope = event.message_type === "group" ? "group" : "private";
+  const segments = Array.isArray(event.message) ? event.message : undefined;
+  const messageId =
+    typeof event.message_id === "number" || typeof event.message_id === "string"
+      ? event.message_id
+      : undefined;
+
+  const reply = await chatOrchestrator.handle({
+    scope,
+    userId,
+    groupId,
+    selfId: typeof event.self_id === "number" ? event.self_id : undefined,
+    messageId,
+    text: message,
+    rawMessage: typeof event.raw_message === "string" ? event.raw_message : undefined,
+    segments,
+  });
+
+  if (!reply) return;
+
+  if (scope === "group" && typeof groupId === "number") {
+    await client.sendGroupText(groupId, reply.text);
+    return;
+  }
+
+  await client.sendPrivateText(userId, reply.text);
 }
 
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {

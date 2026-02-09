@@ -60,6 +60,22 @@
   - `/帮助` 查看 user 指令列表
   - `/天气 <城市>` 查询天气
 
+## 聊天模式（Phase A）
+- 非指令消息会进入聊天编排器：
+  - 私聊：默认回复
+  - 群聊：仅在 `@bot` / `reply` / 点名别名 时回复（默认别名：`小o`,`ovo`）
+- 会话记忆为内存滑动窗口（重启后清空），用于保持短期上下文连续性
+- Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
+
+### 聊天配置
+- `CHAT_ENABLED`：聊天总开关
+- `CHAT_MAX_SESSION_MESSAGES`：单会话保留消息数（user+assistant）
+- `CHAT_GROUP_TRIGGER_MODE`：群触发模式（当前支持 `passive`）
+- `CHAT_BOT_ALIASES`：点名触发别名（逗号分隔）
+- `CHAT_EMPTY_REPLY_FALLBACK`：聊天降级文案
+- `CHAT_MAX_REPLY_CHARS`：最大回复长度
+- `CHAT_PERSONA_NAME`：单一全局人格名称
+
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
 - `pnpm run test:mock`：核心链路回归（连接、命令、中间件、动作重试/超时）

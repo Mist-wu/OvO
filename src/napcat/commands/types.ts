@@ -14,6 +14,7 @@ type OneBotEventBase = Record<string, unknown> & {
   self_id?: number;
   user_id?: number;
   group_id?: number;
+  message_id?: number | string;
   raw_message?: string;
   message?: string | MessageSegment[];
 };

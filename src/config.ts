@@ -34,6 +34,15 @@ function actionLogLevelFromEnv(
   return fallback;
 }
 
+function stringListFromEnv(value: string | undefined, fallback: string[]): string[] {
+  if (!value) return fallback;
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : fallback;
+}
+
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
 const napcatPort = numberFromEnv(process.env.NAPCAT_PORT, 3001);
 const napcatPath = process.env.NAPCAT_WS_PATH ?? "/ws";
@@ -83,6 +92,15 @@ export const config = {
     groupEnabledDefault: booleanFromEnv(process.env.GROUP_ENABLED_DEFAULT, true),
     cooldownMs: numberFromEnv(process.env.COMMAND_COOLDOWN_MS, 0),
     configPath: process.env.BOT_CONFIG_PATH?.trim() || "data/bot_config.json",
+  },
+  chat: {
+    enabled: booleanFromEnv(process.env.CHAT_ENABLED, true),
+    maxSessionMessages: numberFromEnv(process.env.CHAT_MAX_SESSION_MESSAGES, 16),
+    groupTriggerMode: process.env.CHAT_GROUP_TRIGGER_MODE?.trim() || "passive",
+    botAliases: stringListFromEnv(process.env.CHAT_BOT_ALIASES, ["小o", "ovo"]),
+    emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
+    maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 300),
+    personaName: process.env.CHAT_PERSONA_NAME?.trim() || "小o",
   },
   llm: {
     gemini: {

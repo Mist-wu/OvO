@@ -5,6 +5,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
+import { decideTrigger } from "../src/chat/trigger";
+import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import {
   buildActionPayload,
   createGetStatusParams,
@@ -62,6 +64,77 @@ async function main() {
     assert.ok(helpCommand);
     assert.equal(helpCommand?.definition.name, "user_help");
     assert.equal(helpCommand?.definition.access, "user");
+  });
+
+  await runTest("chat trigger follows passive strategy", async () => {
+    const privateDecision = decideTrigger(
+      {
+        scope: "private",
+        userId: 1,
+        text: "你好",
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(privateDecision.shouldReply, true);
+    assert.equal(privateDecision.reason, "private_default");
+
+    const groupDecision = decideTrigger(
+      {
+        scope: "group",
+        userId: 2,
+        groupId: 100,
+        selfId: 999,
+        text: "小o 在吗",
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(groupDecision.shouldReply, true);
+    assert.equal(groupDecision.reason, "named_bot");
+
+    const mentionDecision = decideTrigger(
+      {
+        scope: "group",
+        userId: 2,
+        groupId: 100,
+        selfId: 999,
+        text: "",
+        segments: [{ type: "at", data: { qq: 999 } }],
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(mentionDecision.shouldReply, true);
+    assert.equal(mentionDecision.reason, "mentioned");
+
+    const notTriggered = decideTrigger(
+      {
+        scope: "group",
+        userId: 2,
+        groupId: 100,
+        selfId: 999,
+        text: "今天吃什么",
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(notTriggered.shouldReply, false);
+    assert.equal(notTriggered.reason, "not_triggered");
+  });
+
+  await runTest("in-memory session store keeps sliding window", async () => {
+    const store = new InMemorySessionStore(2);
+    const key = createSessionKey({
+      scope: "private",
+      userId: 7,
+      text: "hi",
+    });
+
+    store.append(key, { role: "user", text: "a", ts: 1 });
+    store.append(key, { role: "assistant", text: "b", ts: 2 });
+    store.append(key, { role: "user", text: "c", ts: 3 });
+
+    const history = store.get(key);
+    assert.equal(history.length, 2);
+    assert.equal(history[0].text, "b");
+    assert.equal(history[1].text, "c");
   });
 
   await runTest("action helpers produce expected payloads", async () => {
