@@ -2,6 +2,7 @@ import { config } from "../config";
 import { configStore } from "../storage/config_store";
 import { buildPrompt } from "./context_builder";
 import { resolveVisualInputs } from "./media";
+import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
 import { generateChatReply } from "./reply";
 import { createSessionKey, InMemorySessionStore } from "./session_store";
@@ -14,6 +15,7 @@ export interface ChatOrchestrator {
 
 class DefaultChatOrchestrator implements ChatOrchestrator {
   private readonly sessions = new InMemorySessionStore(config.chat.maxSessionMessages);
+  private readonly memory = new ChatMemoryManager(this.sessions);
 
   async handle(event: ChatEvent): Promise<ChatReply | null> {
     if (!config.chat.enabled) {
@@ -35,12 +37,16 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
 
     const sessionKey = createSessionKey(event);
     const history = this.sessions.get(sessionKey);
+    const memoryContext = this.memory.getContext(event, sessionKey);
     const persona = getPersonaProfile();
     const visuals = await resolveVisualInputs(event.segments);
 
     const prompt = buildPrompt({
       persona,
       history,
+      archivedSummaries: memoryContext.archivedSummaries,
+      longTermFacts: memoryContext.longTermFacts,
+      userDisplayName: memoryContext.userDisplayName,
       userText: event.text,
       scope: event.scope,
       mediaCount: visuals.length,
@@ -61,6 +67,11 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       role: "assistant",
       text: reply.text,
       ts: Date.now(),
+    });
+    this.memory.recordTurn({
+      event,
+      sessionKey,
+      userText: normalizedUserText,
     });
 
     return {

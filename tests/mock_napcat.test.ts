@@ -265,6 +265,8 @@ async function main() {
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
   process.env.CHAT_MEDIA_ENABLED = "true";
   process.env.CHAT_MEDIA_MAX_IMAGES = "2";
+  process.env.CHAT_MEMORY_ENABLED = "true";
+  process.env.CHAT_MEMORY_PATH = path.join(tmpDir, "chat_memory.json");
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();

@@ -102,6 +102,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   const reply = await chatOrchestrator.handle({
     scope,
     userId,
+    senderName: getSenderName(event),
     groupId,
     selfId: typeof event.self_id === "number" ? event.self_id : undefined,
     messageId,
@@ -218,4 +219,18 @@ async function sendContextText(
   if (event.message_type === "group" && typeof event.group_id === "number") {
     await client.sendGroupText(event.group_id, text);
   }
+}
+
+function getSenderName(event: MessageEvent): string | undefined {
+  const sender = (event as { sender?: unknown }).sender;
+  if (!sender || typeof sender !== "object") return undefined;
+
+  const parsed = sender as { card?: unknown; nickname?: unknown };
+  if (typeof parsed.card === "string" && parsed.card.trim()) {
+    return parsed.card.trim();
+  }
+  if (typeof parsed.nickname === "string" && parsed.nickname.trim()) {
+    return parsed.nickname.trim();
+  }
+  return undefined;
 }

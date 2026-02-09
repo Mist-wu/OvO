@@ -65,6 +65,9 @@
   - 私聊：默认回复
   - 群聊：仅在 `@bot` / `reply` / 点名别名 时回复（默认别名：`小o`,`ovo`）
 - 会话记忆为内存滑动窗口（重启后清空），用于保持短期上下文连续性
+- Long-term Memory V1：
+  - 持久化用户长期记忆（身份/偏好/关系/梗等）到 `CHAT_MEMORY_PATH`
+  - 自动从较早对话切分并归档摘要，供后续提示词引用，降低上下文成本
 - 支持图片/GIF 输入解析（`image` 消息段），会作为多模态输入交给 Gemini
 - Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
 
@@ -80,6 +83,15 @@
 - `CHAT_MEDIA_MAX_IMAGES`：单次最多解析图片数量
 - `CHAT_MEDIA_FETCH_TIMEOUT_MS`：远程图片抓取超时
 - `CHAT_MEDIA_MAX_BYTES`：单图最大字节数
+- `CHAT_MEMORY_ENABLED`：是否启用长期记忆与摘要归档
+- `CHAT_MEMORY_PATH`：长期记忆存储文件路径
+- `CHAT_MEMORY_MAX_FACTS_PER_USER`：每个用户最多保留事实条数
+- `CHAT_MEMORY_CONTEXT_FACT_COUNT`：提示词中注入的长期事实条数
+- `CHAT_SUMMARY_CONTEXT_COUNT`：提示词中注入的归档摘要条数
+- `CHAT_SUMMARY_ARCHIVE_TRIGGER_MESSAGES`：触发归档的最小会话消息数
+- `CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES`：每次归档切出的旧消息条数
+- `CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES`：归档后保留在短期上下文中的最新消息数
+- `CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION`：每个会话最多保留的归档摘要数
 
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）

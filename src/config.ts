@@ -105,6 +105,21 @@ export const config = {
     mediaMaxImages: numberFromEnv(process.env.CHAT_MEDIA_MAX_IMAGES, 2),
     mediaFetchTimeoutMs: numberFromEnv(process.env.CHAT_MEDIA_FETCH_TIMEOUT_MS, 12000),
     mediaMaxBytes: numberFromEnv(process.env.CHAT_MEDIA_MAX_BYTES, 5 * 1024 * 1024),
+    memoryEnabled: booleanFromEnv(process.env.CHAT_MEMORY_ENABLED, true),
+    memoryPath: process.env.CHAT_MEMORY_PATH?.trim() || "data/chat_memory.json",
+    memoryMaxFactsPerUser: numberFromEnv(process.env.CHAT_MEMORY_MAX_FACTS_PER_USER, 40),
+    memoryContextFactCount: numberFromEnv(process.env.CHAT_MEMORY_CONTEXT_FACT_COUNT, 8),
+    summaryContextCount: numberFromEnv(process.env.CHAT_SUMMARY_CONTEXT_COUNT, 2),
+    summaryArchiveTriggerMessages: numberFromEnv(
+      process.env.CHAT_SUMMARY_ARCHIVE_TRIGGER_MESSAGES,
+      12,
+    ),
+    summaryArchiveChunkMessages: numberFromEnv(process.env.CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES, 6),
+    summaryArchiveKeepLatestMessages: numberFromEnv(
+      process.env.CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES,
+      8,
+    ),
+    summaryArchiveMaxPerSession: numberFromEnv(process.env.CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION, 30),
   },
   llm: {
     gemini: {

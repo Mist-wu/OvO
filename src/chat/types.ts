@@ -5,6 +5,7 @@ export type ChatScope = "group" | "private";
 export type ChatEvent = {
   scope: ChatScope;
   userId: number;
+  senderName?: string;
   selfId?: number;
   groupId?: number;
   messageId?: number | string;

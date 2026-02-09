@@ -5,6 +5,8 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
+import { config } from "../src/config";
+import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
 import { resolveVisualInputs } from "../src/chat/media";
 import { decideTrigger } from "../src/chat/trigger";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
@@ -25,6 +27,7 @@ import {
   type OneBotEvent,
 } from "../src/napcat/commands/types";
 import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
+import { ChatMemoryStore } from "../src/storage/chat_memory_store";
 import { ConfigStore } from "../src/storage/config_store";
 
 async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
@@ -385,6 +388,113 @@ async function main() {
 
     await Promise.all([runTask(), runTask(), runTask()]);
     assert.equal(maxActive, 1);
+  });
+
+  await runTest("chat memory fact extractor captures identity and preference", async () => {
+    const facts = extractFactCandidates("我叫阿星，我喜欢拉面，我不喜欢香菜");
+    assert.equal(facts.some((item) => item.category === "identity"), true);
+    assert.equal(
+      facts.some((item) => item.category === "preference" && item.content.includes("喜欢:拉面")),
+      true,
+    );
+    assert.equal(
+      facts.some((item) => item.category === "preference" && item.content.includes("不喜欢:香菜")),
+      true,
+    );
+  });
+
+  await runTest("chat memory store persists user facts and summaries", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-chat-memory-"));
+    const filePath = path.join(tmpDir, "chat_memory.json");
+
+    const store = new ChatMemoryStore(filePath, {
+      maxFactsPerUser: 10,
+      maxSummariesPerSession: 10,
+    });
+    store.touchUser(10001, "测试用户");
+    store.rememberFact(10001, "preference", "喜欢:咖啡");
+    store.appendSessionSummary("p:10001", "用户提到喜欢咖啡", 4);
+
+    const reloaded = new ChatMemoryStore(filePath, {
+      maxFactsPerUser: 10,
+      maxSummariesPerSession: 10,
+    });
+    const facts = reloaded.getUserFacts(10001, 5);
+    const summaries = reloaded.getSessionSummaries("p:10001", 5);
+
+    assert.equal(facts.length, 1);
+    assert.equal(facts[0].content, "喜欢:咖啡");
+    assert.equal(summaries.length, 1);
+    assert.equal(summaries[0].summary, "用户提到喜欢咖啡");
+  });
+
+  await runTest("chat memory manager archives old session messages", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-chat-manager-"));
+    const filePath = path.join(tmpDir, "chat_memory.json");
+
+    const previous = {
+      memoryEnabled: config.chat.memoryEnabled,
+      memoryPath: config.chat.memoryPath,
+      memoryContextFactCount: config.chat.memoryContextFactCount,
+      summaryContextCount: config.chat.summaryContextCount,
+      summaryArchiveTriggerMessages: config.chat.summaryArchiveTriggerMessages,
+      summaryArchiveChunkMessages: config.chat.summaryArchiveChunkMessages,
+      summaryArchiveKeepLatestMessages: config.chat.summaryArchiveKeepLatestMessages,
+      summaryArchiveMaxPerSession: config.chat.summaryArchiveMaxPerSession,
+      memoryMaxFactsPerUser: config.chat.memoryMaxFactsPerUser,
+    };
+
+    Object.assign(config.chat, {
+      memoryEnabled: true,
+      memoryPath: filePath,
+      memoryContextFactCount: 5,
+      summaryContextCount: 3,
+      summaryArchiveTriggerMessages: 4,
+      summaryArchiveChunkMessages: 2,
+      summaryArchiveKeepLatestMessages: 2,
+      summaryArchiveMaxPerSession: 10,
+      memoryMaxFactsPerUser: 20,
+    });
+
+    try {
+      const sessions = new InMemorySessionStore(20);
+      const manager = new ChatMemoryManager(sessions);
+      const sessionKey = "p:30001";
+
+      sessions.append(sessionKey, { role: "user", text: "第一句", ts: 1 });
+      sessions.append(sessionKey, { role: "assistant", text: "第一句回复", ts: 2 });
+      sessions.append(sessionKey, { role: "user", text: "第二句", ts: 3 });
+      sessions.append(sessionKey, { role: "assistant", text: "第二句回复", ts: 4 });
+      sessions.append(sessionKey, { role: "user", text: "第三句", ts: 5 });
+      sessions.append(sessionKey, { role: "assistant", text: "第三句回复", ts: 6 });
+
+      manager.recordTurn({
+        event: {
+          scope: "private",
+          userId: 30001,
+          senderName: "阿星",
+          text: "我喜欢拉面",
+        },
+        sessionKey,
+        userText: "我喜欢拉面",
+      });
+
+      const remaining = sessions.get(sessionKey);
+      assert.equal(remaining.length, 4);
+
+      const context = manager.getContext(
+        {
+          scope: "private",
+          userId: 30001,
+          text: "继续聊",
+        },
+        sessionKey,
+      );
+      assert.equal(context.longTermFacts.some((item) => item.includes("喜欢:拉面")), true);
+      assert.equal(context.archivedSummaries.length >= 1, true);
+    } finally {
+      Object.assign(config.chat, previous);
+    }
   });
 }
 
