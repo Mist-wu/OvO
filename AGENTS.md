@@ -12,27 +12,56 @@
 ## Current status
 - Base TypeScript config in place (pnpm, tsconfig, dotenv)
 - WS adapter ready: connect/reconnect/heartbeat, event handler, schedule loop
+- Action governance ready: queue concurrency/size, rate-limit, retry backoff, runtime metrics
 - Commands (root): `/ping`, `/echo <text>`, `/问 <问题>`, `/help`, `/status`, `/config`, `/group`, `/cooldown`
 - Commands (user): `/帮助`, `/天气 <城市>`
+- Command architecture refactored: registry + middleware (permission/group-enabled/cooldown)
 - Notice/request/meta_event handling with logging
 - Config toggles for welcome, poke reply, auto-approve group/friend requests
 - Permission model: single root user (`ROOT_USER_ID`) + user command set for all users
+- Persistent runtime config store ready (`groupEnabled`, `cooldownMs`) with versioned JSON file
 - On startup, bot auto-sends "Bot成功启动" to `ROOT_USER_ID`
 - WS connection verified locally with `pnpm run dev`
 - Action tracking: echo-based pending map, timeout handling, error formatting
 - Optional action logging level + enable switch; no-wait action send supported
+- External call governance ready: timeout/retry/concurrency/circuit-breaker/fallback
+- Chat Phase A ready:
+  - Non-command messages routed to chat orchestrator
+  - Private chat replies by default
+  - Group chat passive trigger only (`@bot` / `reply` / alias)
+  - In-memory sliding-window session context + single global persona
+- Chat Phase B-1 ready:
+  - Image/GIF message segment parsing (`image`)
+  - Multimodal Gemini call path (`text + inline images`)
+  - Supports `data:image/...;base64,...`, `base64://...`, URL/local-path image sources
+- Chat Memory V1 ready:
+  - Persistent long-term memory store (`data/chat_memory.json`)
+  - Automatic fact extraction (identity/preference/relationship/meme)
+  - Session summary archive for earlier turns (reduce prompt cost)
+  - Prompt now includes long-term facts + archived summaries
 - Mock NapCat WebSocket test suite in `tests/mock_napcat.test.ts`
+- Layered unit test suite in `tests/layered_unit.test.ts`
 - Message segment builder (`text`/`at`/`reply`/`image`/`face`) + unified send helper
 
 ## Repo layout
 - `package.json`, `tsconfig.json`, `.env.example`
 - `src/index.ts` (entry)
 - `src/config.ts` (env config)
+- `src/chat/` (chat orchestrator, trigger, media parser, session store, safety)
 - `src/napcat/client.ts` (WS client + actions)
 - `src/napcat/handlers.ts` (event handling)
+- `src/napcat/commands/` (registry, middleware, root/user definitions)
 - `src/napcat/message.ts` (message segment helpers)
+- `src/napcat/actions.ts` (typed action builders)
 - `src/llm/gemini.ts` (Gemini SDK 直连)
+- `src/llm/index.ts` (LLM exports)
+- `src/chat/memory.ts` (long-term memory manager + archive strategy)
+- `src/storage/config_store.ts` (persistent runtime config)
+- `src/storage/chat_memory_store.ts` (persistent chat memory store)
+- `src/utils/external_call.ts` (unified external call governance)
+- `src/utils/weather.ts` (weather adapter + formatter)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
+- `tests/layered_unit.test.ts` (layered unit tests)
 - `tests/mock_napcat.test.ts` (mock NapCat WS test)
 
 ## Docs
@@ -62,6 +91,20 @@
   - `WELCOME_ENABLED`, `WELCOME_MESSAGE`
   - `POKE_REPLY_ENABLED`, `POKE_REPLY_MESSAGE`
   - `AUTO_APPROVE_GROUP_REQUESTS`, `AUTO_APPROVE_FRIEND_REQUESTS`
+  - Chat:
+    - `CHAT_ENABLED`, `CHAT_MAX_SESSION_MESSAGES`
+    - `CHAT_GROUP_TRIGGER_MODE` (current: `passive`)
+    - `CHAT_BOT_ALIASES` (default: `小o,ovo`)
+    - `CHAT_EMPTY_REPLY_FALLBACK`, `CHAT_MAX_REPLY_CHARS`, `CHAT_PERSONA_NAME`
+    - `CHAT_MEDIA_ENABLED`, `CHAT_MEDIA_MAX_IMAGES`
+    - `CHAT_MEDIA_FETCH_TIMEOUT_MS`, `CHAT_MEDIA_MAX_BYTES`
+    - `CHAT_MEMORY_ENABLED`, `CHAT_MEMORY_PATH`
+    - `CHAT_MEMORY_MAX_FACTS_PER_USER`, `CHAT_MEMORY_CONTEXT_FACT_COUNT`
+    - `CHAT_SUMMARY_CONTEXT_COUNT`
+    - `CHAT_SUMMARY_ARCHIVE_TRIGGER_MESSAGES`
+    - `CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES`
+    - `CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES`
+    - `CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION`
   - Gemini SDK:
     - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
     - `GEMINI_RETRIES`, `GEMINI_RETRY_DELAY_MS`, `GEMINI_CONCURRENCY`, `GEMINI_DEGRADE_ON_FAILURE`
@@ -75,7 +118,9 @@
 1. `pnpm install`
 2. copy `.env.example` -> `.env` and fill values
 3. `pnpm run dev`
-4. `pnpm run test:mock` (mock NapCat WS test)
+4. `pnpm run test:unit` (layered unit test)
+5. `pnpm run test:mock` (mock NapCat WS test)
+6. `pnpm run build` (type-check/build)
 
 ## Workflow
 1. Build the feature or change.
@@ -83,5 +128,6 @@
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
 
 ## Next steps
-- Add richer message/action helpers
-- Add queue/worker when needed
+- Add reply willingness/priority scheduler (must-reply when mentioned, optional reply otherwise)
+- Add proactive group speaking strategy (cold-start breaker + timed bubbling + topic continuation)
+- Add richer tool routing (search/news/weather/time/calc) with source-aware formatting
