@@ -6,20 +6,28 @@ import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
 import { generateChatReply } from "./reply";
 import { createSessionKey, InMemorySessionStore } from "./session_store";
+import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
-import type { ChatEvent, ChatReply } from "./types";
+import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 
 export interface ChatOrchestrator {
-  handle(event: ChatEvent): Promise<ChatReply | null>;
+  decide(event: ChatEvent): TriggerDecision;
+  handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
 }
 
 class DefaultChatOrchestrator implements ChatOrchestrator {
   private readonly sessions = new InMemorySessionStore(config.chat.maxSessionMessages);
   private readonly memory = new ChatMemoryManager(this.sessions);
 
-  async handle(event: ChatEvent): Promise<ChatReply | null> {
+  decide(event: ChatEvent): TriggerDecision {
     if (!config.chat.enabled) {
-      return null;
+      return {
+        shouldReply: false,
+        reason: "not_triggered",
+        priority: "low",
+        waitMs: 0,
+        willingness: 0,
+      };
     }
 
     if (
@@ -27,10 +35,20 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       typeof event.groupId === "number" &&
       !configStore.isGroupEnabled(event.groupId)
     ) {
-      return null;
+      return {
+        shouldReply: false,
+        reason: "group_disabled",
+        priority: "low",
+        waitMs: 0,
+        willingness: 0,
+      };
     }
 
-    const decision = decideTrigger(event, config.chat.botAliases);
+    return decideTrigger(event, config.chat.botAliases);
+  }
+
+  async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
+    const decision = decisionInput ?? this.decide(event);
     if (!decision.shouldReply) {
       return null;
     }
@@ -40,6 +58,19 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const memoryContext = this.memory.getContext(event, sessionKey);
     const persona = getPersonaProfile();
     const visuals = await resolveVisualInputs(event.segments);
+    const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
+    const toolResult = await routeChatTool(event);
+
+    if (toolResult.type === "direct") {
+      this.recordConversationTurn(sessionKey, event, normalizedUserText, toolResult.text);
+      return {
+        text: toolResult.text,
+        from: "tool",
+        reason: decision.reason,
+        priority: decision.priority,
+        willingness: decision.willingness,
+      };
+    }
 
     const prompt = buildPrompt({
       persona,
@@ -50,14 +81,38 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       userText: event.text,
       scope: event.scope,
       mediaCount: visuals.length,
+      eventTimeMs: event.eventTimeMs,
+      toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
     });
 
-    const reply = await generateChatReply({
+    const generated = await generateChatReply({
       prompt,
       visuals,
     });
+    const reply =
+      toolResult.type === "context" && generated.from === "fallback"
+        ? {
+            text: toolResult.fallbackText,
+            from: "tool" as const,
+          }
+        : generated;
 
-    const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
+    this.recordConversationTurn(sessionKey, event, normalizedUserText, reply.text);
+
+    return {
+      ...reply,
+      reason: decision.reason,
+      priority: decision.priority,
+      willingness: decision.willingness,
+    };
+  }
+
+  private recordConversationTurn(
+    sessionKey: string,
+    event: ChatEvent,
+    normalizedUserText: string,
+    replyText: string,
+  ): void {
     this.sessions.append(sessionKey, {
       role: "user",
       text: normalizedUserText,
@@ -65,7 +120,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     });
     this.sessions.append(sessionKey, {
       role: "assistant",
-      text: reply.text,
+      text: replyText,
       ts: Date.now(),
     });
     this.memory.recordTurn({
@@ -73,11 +128,6 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       sessionKey,
       userText: normalizedUserText,
     });
-
-    return {
-      ...reply,
-      reason: decision.reason,
-    };
   }
 }
 

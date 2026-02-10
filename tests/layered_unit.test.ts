@@ -9,6 +9,8 @@ import { config } from "../src/config";
 import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
 import { resolveVisualInputs } from "../src/chat/media";
 import { decideTrigger } from "../src/chat/trigger";
+import { buildPrompt } from "../src/chat/context_builder";
+import { detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import {
   buildActionPayload,
@@ -121,6 +123,8 @@ async function main() {
     );
     assert.equal(notTriggered.shouldReply, false);
     assert.equal(notTriggered.reason, "not_triggered");
+    assert.equal(notTriggered.priority, "low");
+    assert.equal(notTriggered.waitMs, 0);
 
     const privateImageOnly = decideTrigger(
       {
@@ -140,6 +144,74 @@ async function main() {
     );
     assert.equal(privateImageOnly.shouldReply, true);
     assert.equal(privateImageOnly.reason, "private_default");
+    assert.equal(privateImageOnly.priority, "high");
+    assert.equal(privateImageOnly.waitMs > 0, true);
+  });
+
+  await runTest("chat trigger computes willingness and priority in group", async () => {
+    const highIntent = decideTrigger(
+      {
+        scope: "group",
+        groupId: 123,
+        userId: 10086,
+        selfId: 999,
+        text: "有人知道这个bot报错怎么修吗？我代码一直炸",
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(highIntent.shouldReply, true);
+    assert.equal(highIntent.reason, "group_willing");
+    assert.equal(highIntent.priority === "high" || highIntent.priority === "normal", true);
+    assert.equal(highIntent.willingness >= 0.62, true);
+    assert.equal(highIntent.waitMs > 0, true);
+
+    const lowIntent = decideTrigger(
+      {
+        scope: "group",
+        groupId: 123,
+        userId: 20001,
+        selfId: 999,
+        text: "哈哈",
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(lowIntent.shouldReply, false);
+    assert.equal(lowIntent.reason, "not_triggered");
+    assert.equal(lowIntent.willingness < 0.62, true);
+  });
+
+  await runTest("tool router detects weather location and search query", async () => {
+    assert.equal(detectWeatherLocation("北京天气怎么样"), "北京");
+    assert.equal(detectWeatherLocation("查 上海 天气"), "上海");
+    assert.equal(detectWeatherLocation("今天天气真好"), undefined);
+
+    assert.equal(detectSearchQuery("帮我搜一下 OpenAI GPT-5 发布说明"), "OpenAI GPT-5 发布说明");
+    assert.equal(detectSearchQuery("量子纠缠是什么？"), "量子纠缠是什么");
+    assert.equal(detectSearchQuery("/天气 北京"), undefined);
+  });
+
+  await runTest("context builder includes event time and tool context", async () => {
+    const prompt = buildPrompt({
+      persona: {
+        name: "小o",
+        style: "test",
+        slang: ["确实"],
+        doNot: ["编造"],
+        replyLength: "short",
+      },
+      history: [{ role: "user", text: "你好", ts: 1 }],
+      archivedSummaries: [],
+      longTermFacts: [],
+      userText: "今天北京天气咋样",
+      scope: "private",
+      mediaCount: 0,
+      eventTimeMs: 1739145600000,
+      toolContext: "工具结果（网页搜索）：\n搜索词：北京天气",
+    });
+
+    assert.equal(prompt.includes("当前消息时间（NapCat事件时间）："), true);
+    assert.equal(prompt.includes("工具调用上下文："), true);
+    assert.equal(prompt.includes("搜索词：北京天气"), true);
   });
 
   await runTest("resolve visual inputs supports data-uri gif", async () => {

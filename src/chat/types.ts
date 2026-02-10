@@ -9,6 +9,7 @@ export type ChatEvent = {
   selfId?: number;
   groupId?: number;
   messageId?: number | string;
+  eventTimeMs?: number;
   text: string;
   rawMessage?: string;
   segments?: MessageSegment[];
@@ -25,13 +26,19 @@ export type TriggerReason =
   | "mentioned"
   | "replied_to_bot"
   | "named_bot"
+  | "group_willing"
   | "group_disabled"
   | "empty_text"
   | "not_triggered";
 
+export type ReplyPriority = "must" | "high" | "normal" | "low";
+
 export type TriggerDecision = {
   shouldReply: boolean;
   reason: TriggerReason;
+  priority: ReplyPriority;
+  waitMs: number;
+  willingness: number;
 };
 
 export type SessionRole = "user" | "assistant";
@@ -52,6 +59,8 @@ export type PersonaProfile = {
 
 export type ChatReply = {
   text: string;
-  from: "llm" | "fallback";
+  from: "llm" | "fallback" | "tool";
   reason?: TriggerReason;
+  priority?: ReplyPriority;
+  willingness?: number;
 };

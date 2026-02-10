@@ -133,6 +133,10 @@ export const config = {
     apiKey: process.env.WEATHER_API_KEY?.trim() || "",
     timeoutMs: numberFromEnv(process.env.WEATHER_TIMEOUT_MS, 8000),
   },
+  search: {
+    enabled: booleanFromEnv(process.env.SEARCH_ENABLED, true),
+    timeoutMs: numberFromEnv(process.env.SEARCH_TIMEOUT_MS, 8000),
+  },
   external: {
     circuitBreakerEnabled: booleanFromEnv(process.env.EXTERNAL_CIRCUIT_BREAKER_ENABLED, true),
     circuitFailureThreshold: numberFromEnv(process.env.EXTERNAL_CIRCUIT_FAILURE_THRESHOLD, 3),
@@ -148,6 +152,12 @@ export const config = {
       retryDelayMs: numberFromEnv(process.env.WEATHER_RETRY_DELAY_MS, 150),
       concurrency: numberFromEnv(process.env.WEATHER_CONCURRENCY, 4),
       degradeOnFailure: booleanFromEnv(process.env.WEATHER_DEGRADE_ON_FAILURE, true),
+    },
+    search: {
+      retries: numberFromEnv(process.env.SEARCH_RETRIES, 1),
+      retryDelayMs: numberFromEnv(process.env.SEARCH_RETRY_DELAY_MS, 150),
+      concurrency: numberFromEnv(process.env.SEARCH_CONCURRENCY, 3),
+      degradeOnFailure: booleanFromEnv(process.env.SEARCH_DEGRADE_ON_FAILURE, true),
     },
   },
 };

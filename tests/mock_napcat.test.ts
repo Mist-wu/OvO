@@ -260,6 +260,8 @@ async function main() {
   process.env.GROUP_ENABLED_DEFAULT = "true";
   process.env.COMMAND_COOLDOWN_MS = "0";
   process.env.GEMINI_API_KEY = "";
+  process.env.WEATHER_API_KEY = "";
+  process.env.SEARCH_ENABLED = "false";
   process.env.CHAT_ENABLED = "true";
   process.env.CHAT_BOT_ALIASES = "小o,ovo";
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
@@ -582,6 +584,63 @@ async function main() {
           messageToText(item.params.message) === "刚卡了",
       );
       assert.equal(messageToText(action.params.message), "刚卡了");
+    });
+
+    await runTest("private chat waits for follow-up and only replies once", async () => {
+      const userId = 33336;
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: userId,
+        self_id: 99999,
+        message: "我想问下",
+      });
+
+      await delay(120);
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: userId,
+        self_id: 99999,
+        message: "我想问下怎么配环境",
+      });
+
+      const first = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === userId,
+        2500,
+      );
+      assert.equal(messageToText(first.params.message).length > 0, true);
+
+      await delay(250);
+      const replied = server.actions.filter(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === userId,
+      );
+      assert.equal(replied.length, 1);
+    });
+
+    await runTest("private weather question uses tool route directly", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 33337,
+        self_id: 99999,
+        message: "北京天气怎么样",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 33337,
+        2500,
+      );
+      assert.equal(
+        messageToText(action.params.message).includes("天气功能未配置：请设置 WEATHER_API_KEY"),
+        true,
+      );
     });
 
     await runTest("permission middleware blocks non-root users", async () => {
