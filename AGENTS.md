@@ -68,6 +68,7 @@
 - `src/storage/chat_memory_store.ts` (persistent chat memory store)
 - `src/skills/runtime/` (skill loader + registry + executor)
 - `src/skills/` (runtime skills, each with `SKILL.md`)
+- `src/skills/skill-creator/` (for agent to scaffold/create new skills)
 - `src/utils/external_call.ts` (unified external call governance)
 - `src/utils/weather.ts` (weather adapter + formatter)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
