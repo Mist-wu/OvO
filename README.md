@@ -34,6 +34,15 @@
   - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`
   - `WEATHER_DEGRADE_ON_FAILURE`
 
+## 搜索配置（聊天自动路由）
+- 聊天模式下会对“搜索类问题”自动执行网页搜索，并把结果注入到回复上下文中。
+- 使用 DuckDuckGo Instant Answer，无需额外 API Key。
+- 在 `.env` 中设置：
+  - `SEARCH_ENABLED`
+  - `SEARCH_TIMEOUT_MS`
+  - `SEARCH_RETRIES`, `SEARCH_RETRY_DELAY_MS`, `SEARCH_CONCURRENCY`
+  - `SEARCH_DEGRADE_ON_FAILURE`
+
 ## NapCat 动作队列治理
 - 动作发送链路支持可配置并发、队列上限、每秒限流与指数退避重试。
 - 在 `.env` 中设置：
@@ -69,6 +78,9 @@
   - 持久化用户长期记忆（身份/偏好/关系/梗等）到 `CHAT_MEMORY_PATH`
   - 自动从较早对话切分并归档摘要，供后续提示词引用，降低上下文成本
 - 支持图片/GIF 输入解析（`image` 消息段），会作为多模态输入交给 Gemini
+- 聊天工具路由（当前）：
+  - 天气问题优先走天气工具并直接返回结果
+  - 搜索类问题自动执行网页搜索，搜索结果注入提示词后由模型组织回答
 - Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
 
 ### 聊天配置
