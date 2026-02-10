@@ -1,12 +1,16 @@
-import { config } from "../config";
-import { fetchWebSearchSummary } from "../utils/search";
-import { fetchWeatherSummary } from "../utils/weather";
+import { runtimeSkills } from "../skills/runtime";
 import type { ChatEvent } from "./types";
 
 export type ToolRouteResult =
   | { type: "none" }
-  | { type: "direct"; tool: "weather" | "search"; text: string }
-  | { type: "context"; tool: "search"; contextText: string; fallbackText: string };
+  | { type: "direct"; tool: "weather" | "search"; skillName: string; text: string }
+  | {
+      type: "context";
+      tool: "search";
+      skillName: string;
+      contextText: string;
+      fallbackText: string;
+    };
 
 const WEATHER_CITY_BLACKLIST = new Set([
   "今天",
@@ -111,31 +115,19 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
 
   const weatherLocation = detectWeatherLocation(userText);
   if (weatherLocation) {
-    try {
-      const report = await fetchWeatherSummary(weatherLocation);
+    const result = await runtimeSkills.executor.execute({
+      capability: "weather",
+      location: weatherLocation,
+      query: userText,
+    });
+    if (result.handled) {
       return {
         type: "direct",
         tool: "weather",
-        text: report,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("WEATHER_API_KEY")) {
-        return {
-          type: "direct",
-          tool: "weather",
-          text: message,
-        };
-      }
-      return {
-        type: "direct",
-        tool: "weather",
-        text: "天气查询失败，请稍后重试",
+        skillName: result.skillName,
+        text: result.text,
       };
     }
-  }
-
-  if (!config.search.enabled) {
     return { type: "none" };
   }
 
@@ -144,29 +136,28 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
     return { type: "none" };
   }
 
-  let searchSummary = "";
-  try {
-    searchSummary = await fetchWebSearchSummary(searchQuery);
-  } catch (error) {
-    console.warn("[chat] search route failed:", error);
+  const result = await runtimeSkills.executor.execute({
+    capability: "search",
+    query: searchQuery,
+  });
+  if (!result.handled) {
     return { type: "none" };
   }
-  if (searchSummary.startsWith("搜索服务暂时不可用")) {
+
+  if (result.mode === "direct") {
     return {
       type: "direct",
       tool: "search",
-      text: searchSummary,
+      skillName: result.skillName,
+      text: result.text,
     };
   }
 
   return {
     type: "context",
     tool: "search",
-    contextText: [
-      "工具结果（网页搜索）：",
-      searchSummary,
-      "请优先基于这些结果回答；如果信息不足，请明确说不确定。",
-    ].join("\n"),
-    fallbackText: `我先查到这些：\n${searchSummary}`,
+    skillName: result.skillName,
+    contextText: result.text,
+    fallbackText: result.fallbackText ?? "搜索技能不可用，请稍后重试",
   };
 }

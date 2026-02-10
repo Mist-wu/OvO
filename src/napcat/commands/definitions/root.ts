@@ -1,5 +1,6 @@
 import { config } from "../../../config";
 import { askGemini } from "../../../llm";
+import { runtimeSkills } from "../../../skills/runtime";
 import { configStore } from "../../../storage/config_store";
 import type { CommandDefinition } from "../types";
 
@@ -123,6 +124,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
       async execute(context) {
         const snapshot = configStore.snapshot;
+        const skillCount = runtimeSkills.registry.list().length;
         const rootUserId =
           typeof config.permissions.rootUserId === "number"
             ? String(config.permissions.rootUserId)
@@ -131,7 +133,8 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           `rootUserId=${rootUserId} cooldownMs=${snapshot.cooldownMs} ` +
             `groupEnabledDefault=${config.permissions.groupEnabledDefault} ` +
             `autoApproveGroup=${config.requests.autoApproveGroup} ` +
-            `autoApproveFriend=${config.requests.autoApproveFriend}`,
+            `autoApproveFriend=${config.requests.autoApproveFriend} ` +
+            `skillsLoaded=${skillCount}`,
         );
       },
     }),

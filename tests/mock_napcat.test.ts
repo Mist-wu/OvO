@@ -261,7 +261,6 @@ async function main() {
   process.env.COMMAND_COOLDOWN_MS = "0";
   process.env.GEMINI_API_KEY = "";
   process.env.WEATHER_API_KEY = "";
-  process.env.SEARCH_ENABLED = "false";
   process.env.CHAT_ENABLED = "true";
   process.env.CHAT_BOT_ALIASES = "小o,ovo";
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";

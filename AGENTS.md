@@ -34,11 +34,19 @@
   - Image/GIF message segment parsing (`image`)
   - Multimodal Gemini call path (`text + inline images`)
   - Supports `data:image/...;base64,...`, `base64://...`, URL/local-path image sources
+- Reply willingness scheduler V1 ready:
+  - `@bot` / `reply` / alias as must-reply
+  - Group willingness scoring + priority (`must/high/normal/low`)
+  - Delayed reply with cancel-on-followup (wait user to finish)
 - Chat Memory V1 ready:
   - Persistent long-term memory store (`data/chat_memory.json`)
   - Automatic fact extraction (identity/preference/relationship/meme)
   - Session summary archive for earlier turns (reduce prompt cost)
   - Prompt now includes long-term facts + archived summaries
+- Skills runtime V1 ready:
+  - Skill Loader + Registry + Executor
+  - `SKILL.md` metadata (`capability`, `mode`) wired into chat tool routing
+  - Built-in capabilities: `weather` (direct), `search` (context)
 - Mock NapCat WebSocket test suite in `tests/mock_napcat.test.ts`
 - Layered unit test suite in `tests/layered_unit.test.ts`
 - Message segment builder (`text`/`at`/`reply`/`image`/`face`) + unified send helper
@@ -58,6 +66,8 @@
 - `src/chat/memory.ts` (long-term memory manager + archive strategy)
 - `src/storage/config_store.ts` (persistent runtime config)
 - `src/storage/chat_memory_store.ts` (persistent chat memory store)
+- `src/skills/runtime/` (skill loader + registry + executor)
+- `src/skills/` (runtime skills, each with `SKILL.md`)
 - `src/utils/external_call.ts` (unified external call governance)
 - `src/utils/weather.ts` (weather adapter + formatter)
 - `src/utils/schedule_tasks.ts` (periodic tasks)
@@ -111,6 +121,10 @@
   - Weather:
     - `WEATHER_API_KEY`, `WEATHER_TIMEOUT_MS`
     - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`, `WEATHER_DEGRADE_ON_FAILURE`
+  - Skills:
+    - Place skill metadata at `src/skills/<name>/SKILL.md`
+    - `capability` is used for runtime routing (e.g. `weather`, `search`)
+    - `mode` supports `direct` / `context`
   - External call governance:
     - `EXTERNAL_CIRCUIT_BREAKER_ENABLED`, `EXTERNAL_CIRCUIT_FAILURE_THRESHOLD`, `EXTERNAL_CIRCUIT_OPEN_MS`
 
@@ -128,6 +142,6 @@
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
 
 ## Next steps
-- Add reply willingness/priority scheduler (must-reply when mentioned, optional reply otherwise)
 - Add proactive group speaking strategy (cold-start breaker + timed bubbling + topic continuation)
-- Add richer tool routing (search/news/weather/time/calc) with source-aware formatting
+- Expand skill capabilities (time/calc/news/FX) and skill-level source formatting
+- Add dynamic emotion + persona adaptation on top of current scheduler

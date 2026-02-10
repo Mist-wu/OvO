@@ -34,14 +34,16 @@
   - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`
   - `WEATHER_DEGRADE_ON_FAILURE`
 
-## 搜索配置（聊天自动路由）
-- 聊天模式下会对“搜索类问题”自动执行网页搜索，并把结果注入到回复上下文中。
-- 使用 DuckDuckGo Instant Answer，无需额外 API Key。
-- 在 `.env` 中设置：
-  - `SEARCH_ENABLED`
-  - `SEARCH_TIMEOUT_MS`
-  - `SEARCH_RETRIES`, `SEARCH_RETRY_DELAY_MS`, `SEARCH_CONCURRENCY`
-  - `SEARCH_DEGRADE_ON_FAILURE`
+## Skills（聊天工具能力）
+- 聊天工具调用改为技能架构：`Skill Loader + Skill Registry + Skill Executor`。
+- Skill 根目录：`src/skills/<skill-name>/SKILL.md`
+- 运行时入口：
+  - `src/skills/runtime/loader.ts`
+  - `src/skills/runtime/registry.ts`
+  - `src/skills/runtime/executor.ts`
+- 当前内置能力：
+  - `weather`（`capability=weather`, direct）
+  - `search`（`capability=search`, context）
 
 ## NapCat 动作队列治理
 - 动作发送链路支持可配置并发、队列上限、每秒限流与指数退避重试。
@@ -62,7 +64,7 @@
   - `/问 <问题>` 使用 Gemini 问答
   - `/help` 查看完整命令列表（root + user）
   - `/status` 查看运行状态（连接、队列、pending）
-  - `/config` 查看当前配置摘要
+  - `/config` 查看当前配置摘要（含 `skillsLoaded`）
   - `/group on|off [group_id]` 群开关
   - `/cooldown [ms]` 查看/设置冷却
 - user 指令（所有用户可用）：
@@ -80,7 +82,11 @@
 - 支持图片/GIF 输入解析（`image` 消息段），会作为多模态输入交给 Gemini
 - 聊天工具路由（当前）：
   - 天气问题优先走天气工具并直接返回结果
-  - 搜索类问题自动执行网页搜索，搜索结果注入提示词后由模型组织回答
+  - 搜索类问题通过 `search` skill 注入上下文，再由模型组织回答（当前不做实时网页抓取）
+- 回复调度（V1）：
+  - `@bot` / `reply` / 别名：必回
+  - 普通群消息：基于意愿评分择机回复
+  - 非必回场景：短延迟并可被同会话新消息覆盖（等用户说完）
 - Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
 
 ### 聊天配置

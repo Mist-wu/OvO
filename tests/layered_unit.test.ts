@@ -12,6 +12,9 @@ import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
+import { SkillLoader } from "../src/skills/runtime/loader";
+import { SkillRegistry } from "../src/skills/runtime/registry";
+import { SkillExecutor } from "../src/skills/runtime/executor";
 import {
   buildActionPayload,
   createGetStatusParams,
@@ -188,6 +191,95 @@ async function main() {
     assert.equal(detectSearchQuery("帮我搜一下 OpenAI GPT-5 发布说明"), "OpenAI GPT-5 发布说明");
     assert.equal(detectSearchQuery("量子纠缠是什么？"), "量子纠缠是什么");
     assert.equal(detectSearchQuery("/天气 北京"), undefined);
+  });
+
+  await runTest("skill loader and registry parse SKILL metadata", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-skills-"));
+    const weatherDir = path.join(tmpDir, "weather");
+    const searchDir = path.join(tmpDir, "search");
+    fs.mkdirSync(weatherDir, { recursive: true });
+    fs.mkdirSync(searchDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(weatherDir, "SKILL.md"),
+      [
+        "---",
+        "name: weather",
+        "description: weather skill",
+        "capability: weather",
+        "mode: direct",
+        "---",
+        "",
+        "# Weather",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(searchDir, "SKILL.md"),
+      [
+        "---",
+        "name: search",
+        "description: search skill",
+        "capability: search",
+        "mode: context",
+        "---",
+        "",
+        "# Search",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const loader = new SkillLoader(tmpDir);
+    const loaded = loader.loadAll();
+    assert.equal(loaded.length, 2);
+
+    const registry = new SkillRegistry(loader);
+    const weather = registry.findFirstByCapability("weather");
+    const search = registry.findFirstByCapability("search");
+    assert.equal(weather?.name, "weather");
+    assert.equal(search?.name, "search");
+  });
+
+  await runTest("skill executor resolves search context and missing skill", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-skill-exec-"));
+    const searchDir = path.join(tmpDir, "search");
+    fs.mkdirSync(searchDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(searchDir, "SKILL.md"),
+      [
+        "---",
+        "name: search",
+        "description: search skill",
+        "capability: search",
+        "mode: context",
+        "---",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const loader = new SkillLoader(tmpDir);
+    const registry = new SkillRegistry(loader);
+    const executor = new SkillExecutor(registry);
+
+    const searchResult = await executor.execute({
+      capability: "search",
+      query: "量子纠缠是什么",
+    });
+    assert.equal(searchResult.handled, true);
+    if (searchResult.handled) {
+      assert.equal(searchResult.mode, "context");
+      assert.equal(searchResult.text.includes("量子纠缠是什么"), true);
+    }
+
+    const weatherResult = await executor.execute({
+      capability: "weather",
+      location: "北京",
+      query: "北京天气",
+    });
+    assert.equal(weatherResult.handled, false);
+    if (!weatherResult.handled) {
+      assert.equal(weatherResult.reason, "skill_not_found");
+    }
   });
 
   await runTest("context builder includes event time and tool context", async () => {
