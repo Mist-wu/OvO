@@ -336,6 +336,73 @@ async function main() {
     assert.deepEqual(sentTexts, ["reply:second"]);
   });
 
+  await runTest("chat agent loop emits observable events and runtime snapshot", async () => {
+    const observed: string[] = [];
+    const orchestrator: ChatOrchestrator = {
+      decide() {
+        return {
+          shouldReply: true,
+          reason: "private_default",
+          priority: "high",
+          waitMs: 0,
+          willingness: 0.95,
+        };
+      },
+      async prepare(event): Promise<PreparedChatReply> {
+        return {
+          event,
+          sessionKey: `p:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: `ok:${event.text}`,
+            from: "tool",
+          },
+        };
+      },
+      commit() {},
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const unsubscribe = loop.subscribe((event) => {
+      observed.push(event.type);
+    });
+
+    const client = {
+      sendPrivateText: async () => ({
+        status: "ok",
+        retcode: 0,
+      }),
+      sendGroupText: async () => ({
+        status: "ok",
+        retcode: 0,
+      }),
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7010,
+      text: "hello",
+    });
+    await delay(120);
+    unsubscribe();
+
+    const snapshot = loop.getRuntimeSnapshot();
+    assert.equal(snapshot.queueSize, 0);
+    assert.equal(snapshot.pumping, false);
+    assert.equal(snapshot.pendingProactiveGroups, 0);
+    assert.equal(snapshot.activeReplySessions, 0);
+    assert.equal(observed.includes("incoming"), true);
+    assert.equal(observed.includes("decision"), true);
+    assert.equal(observed.includes("turn_enqueued"), true);
+    assert.equal(observed.includes("turn_started"), true);
+    assert.equal(observed.includes("turn_sent"), true);
+    assert.equal(observed.includes("turn_completed"), true);
+    assert.equal(observed.includes("queue_idle"), true);
+  });
+
   await runTest("tool router detects weather location and search query", async () => {
     assert.equal(detectWeatherLocation("北京天气怎么样"), "北京");
     assert.equal(detectWeatherLocation("查 上海 天气"), "上海");

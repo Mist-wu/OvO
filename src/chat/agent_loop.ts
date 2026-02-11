@@ -7,6 +7,116 @@ import { chatStateEngine } from "./state_engine";
 import type { ChatEvent, TriggerDecision } from "./types";
 import type { ChatOrchestrator } from "./orchestrator";
 
+export type ChatAgentLoopRuntimeSnapshot = {
+  queueSize: number;
+  sessionCount: number;
+  pendingProactiveGroups: number;
+  pumping: boolean;
+  activeReplySessions: number;
+  pendingReplySessions: number;
+};
+
+export type ChatAgentLoopEvent =
+  | {
+      type: "incoming";
+      sessionKey: string;
+      scope: ChatEvent["scope"];
+      userId: number;
+    }
+  | {
+      type: "decision";
+      sessionKey: string;
+      shouldReply: boolean;
+      reason: TriggerDecision["reason"];
+      priority: TriggerDecision["priority"];
+      waitMs: number;
+      willingness: number;
+    }
+  | {
+      type: "turn_waiting";
+      sessionKey: string;
+      seq: number;
+      waitMs: number;
+      queuedAt: number;
+    }
+  | {
+      type: "turn_enqueued";
+      sessionKey: string;
+      seq: number;
+      queuedAt: number;
+    }
+  | {
+      type: "turn_followup_replaced";
+      sessionKey: string;
+      previousSeq: number;
+      nextSeq: number;
+    }
+  | {
+      type: "turn_started";
+      sessionKey: string;
+      seq: number;
+      queuedDelayMs: number;
+    }
+  | {
+      type: "turn_dropped";
+      sessionKey: string;
+      seq: number;
+      reason: "stale" | "filtered";
+    }
+  | {
+      type: "turn_sent";
+      sessionKey: string;
+      seq: number;
+      from: "llm" | "fallback" | "tool";
+      length: number;
+    }
+  | {
+      type: "turn_failed";
+      sessionKey: string;
+      seq: number;
+      error: string;
+    }
+  | {
+      type: "turn_completed";
+      sessionKey: string;
+      seq: number;
+      hadFollowUp: boolean;
+    }
+  | {
+      type: "proactive_enqueued";
+      groupId: number;
+      reason: ProactiveCandidate["reason"];
+      topic: string;
+    }
+  | {
+      type: "proactive_sent";
+      groupId: number;
+      reason: ProactiveCandidate["reason"];
+      topic: string;
+    }
+  | {
+      type: "proactive_skipped";
+      groupId: number;
+      reason: "group_disabled" | "busy_group";
+      topic: string;
+    }
+  | {
+      type: "proactive_failed";
+      groupId: number;
+      reason: ProactiveCandidate["reason"];
+      topic: string;
+      error: string;
+    }
+  | {
+      type: "queue_idle";
+    };
+
+export type ChatAgentLoopObservedEvent = ChatAgentLoopEvent & {
+  eventId: number;
+  ts: number;
+  runtime: ChatAgentLoopRuntimeSnapshot;
+};
+
 type ReplyTurn = {
   seq: number;
   queuedAt: number;
@@ -62,19 +172,64 @@ export class ChatAgentLoop {
   private readonly sessions = new Map<string, SessionLoopState>();
   private readonly queue: QueueTurn[] = [];
   private readonly pendingProactiveGroups = new Set<number>();
+  private readonly listeners = new Set<(event: ChatAgentLoopObservedEvent) => void>();
+  private eventId = 0;
   private pumping = false;
 
   constructor(private readonly orchestrator: ChatOrchestrator) {}
 
+  subscribe(listener: (event: ChatAgentLoopObservedEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  getRuntimeSnapshot(): ChatAgentLoopRuntimeSnapshot {
+    let activeReplySessions = 0;
+    let pendingReplySessions = 0;
+    for (const state of this.sessions.values()) {
+      if (state.runningSeq !== undefined || state.queuedSeq !== undefined) {
+        activeReplySessions += 1;
+      }
+      if (state.pendingTurn !== undefined || state.followUpTurn !== undefined) {
+        pendingReplySessions += 1;
+      }
+    }
+
+    return {
+      queueSize: this.queue.length,
+      sessionCount: this.sessions.size,
+      pendingProactiveGroups: this.pendingProactiveGroups.size,
+      pumping: this.pumping,
+      activeReplySessions,
+      pendingReplySessions,
+    };
+  }
+
   async onIncomingMessage(client: NapcatClient, event: ChatEvent): Promise<void> {
     chatStateEngine.recordIncoming(event);
-
     const decision = this.orchestrator.decide(event);
+    const sessionKey = createSessionKey(event);
+    this.emit({
+      type: "incoming",
+      sessionKey,
+      scope: event.scope,
+      userId: event.userId,
+    });
+    this.emit({
+      type: "decision",
+      sessionKey,
+      shouldReply: decision.shouldReply,
+      reason: decision.reason,
+      priority: decision.priority,
+      waitMs: decision.waitMs,
+      willingness: decision.willingness,
+    });
     if (!decision.shouldReply) {
       return;
     }
 
-    const sessionKey = createSessionKey(event);
     const session = this.ensureSession(sessionKey);
     const seq = session.nextSeq + 1;
     session.nextSeq = seq;
@@ -90,9 +245,26 @@ export class ChatAgentLoop {
       session.minDeliverSeq = Math.max(session.minDeliverSeq, turn.seq);
     }
 
+    const previousPendingSeq = session.pendingTurn?.seq;
+    const previousFollowUpSeq = session.followUpTurn?.seq;
     this.clearPendingTurn(session);
 
     if (session.runningSeq !== undefined || session.queuedSeq !== undefined) {
+      if (previousFollowUpSeq !== undefined && previousFollowUpSeq !== turn.seq) {
+        this.emit({
+          type: "turn_followup_replaced",
+          sessionKey,
+          previousSeq: previousFollowUpSeq,
+          nextSeq: turn.seq,
+        });
+      } else if (previousPendingSeq !== undefined && previousPendingSeq !== turn.seq) {
+        this.emit({
+          type: "turn_followup_replaced",
+          sessionKey,
+          previousSeq: previousPendingSeq,
+          nextSeq: turn.seq,
+        });
+      }
       session.followUpTurn = turn;
       return;
     }
@@ -158,6 +330,13 @@ export class ChatAgentLoop {
     if (shouldDelayReply(turn.decision)) {
       const waitMs = Math.max(0, Math.floor(turn.decision.waitMs));
       session.pendingTurn = turn;
+      this.emit({
+        type: "turn_waiting",
+        sessionKey,
+        seq: turn.seq,
+        waitMs,
+        queuedAt: turn.queuedAt,
+      });
       session.pendingTimer = setTimeout(() => {
         const current = this.sessions.get(sessionKey);
         if (!current || current.pendingTurn?.seq !== turn.seq) {
@@ -179,6 +358,12 @@ export class ChatAgentLoop {
       kind: "reply",
       sessionKey,
       turn,
+    });
+    this.emit({
+      type: "turn_enqueued",
+      sessionKey,
+      seq: turn.seq,
+      queuedAt: turn.queuedAt,
     });
     void this.pumpQueue();
   }
@@ -212,6 +397,12 @@ export class ChatAgentLoop {
         text,
       },
     });
+    this.emit({
+      type: "proactive_enqueued",
+      groupId: candidate.groupId,
+      reason: candidate.reason,
+      topic: candidate.topic,
+    });
     void this.pumpQueue();
   }
 
@@ -233,6 +424,9 @@ export class ChatAgentLoop {
       }
     } finally {
       this.pumping = false;
+      if (this.queue.length <= 0) {
+        this.emit({ type: "queue_idle" });
+      }
     }
   }
 
@@ -243,35 +437,79 @@ export class ChatAgentLoop {
     }
 
     if (turn.seq < session.minDeliverSeq) {
-      this.afterReplyTurn(sessionKey, session);
+      this.emit({
+        type: "turn_dropped",
+        sessionKey,
+        seq: turn.seq,
+        reason: "stale",
+      });
+      this.afterReplyTurn(sessionKey, session, turn.seq);
       return;
     }
 
     session.runningSeq = turn.seq;
+    this.emit({
+      type: "turn_started",
+      sessionKey,
+      seq: turn.seq,
+      queuedDelayMs: Math.max(0, Date.now() - turn.queuedAt),
+    });
 
     try {
       const prepared = await this.orchestrator.prepare(turn.event, turn.decision);
       if (!prepared) {
+        this.emit({
+          type: "turn_dropped",
+          sessionKey,
+          seq: turn.seq,
+          reason: "filtered",
+        });
         return;
       }
 
       if (turn.seq < session.minDeliverSeq) {
+        this.emit({
+          type: "turn_dropped",
+          sessionKey,
+          seq: turn.seq,
+          reason: "stale",
+        });
         return;
       }
 
       await this.sendReply(turn.client, turn.event, prepared.reply.text);
       this.orchestrator.commit(prepared);
+      this.emit({
+        type: "turn_sent",
+        sessionKey,
+        seq: turn.seq,
+        from: prepared.reply.from,
+        length: prepared.reply.text.length,
+      });
     } catch (error) {
+      const normalizedError = error instanceof Error ? error.message : String(error);
+      this.emit({
+        type: "turn_failed",
+        sessionKey,
+        seq: turn.seq,
+        error: normalizedError,
+      });
       console.warn("[chat] agent_loop reply failed:", error);
     } finally {
       session.runningSeq = undefined;
-      this.afterReplyTurn(sessionKey, session);
+      this.afterReplyTurn(sessionKey, session, turn.seq);
     }
   }
 
-  private afterReplyTurn(sessionKey: string, session: SessionLoopState): void {
+  private afterReplyTurn(sessionKey: string, session: SessionLoopState, completedSeq: number): void {
     const followUp = session.followUpTurn;
     session.followUpTurn = undefined;
+    this.emit({
+      type: "turn_completed",
+      sessionKey,
+      seq: completedSeq,
+      hadFollowUp: Boolean(followUp),
+    });
     if (followUp) {
       this.scheduleTurn(sessionKey, session, followUp);
       return;
@@ -304,20 +542,65 @@ export class ChatAgentLoop {
   private async executeProactiveTurn(turn: ProactiveTurn): Promise<void> {
     try {
       if (!configStore.isGroupEnabled(turn.groupId)) {
+        this.emit({
+          type: "proactive_skipped",
+          groupId: turn.groupId,
+          reason: "group_disabled",
+          topic: turn.topic,
+        });
         return;
       }
       if (this.hasBusyGroupConversations(turn.groupId)) {
+        this.emit({
+          type: "proactive_skipped",
+          groupId: turn.groupId,
+          reason: "busy_group",
+          topic: turn.topic,
+        });
         return;
       }
       await turn.client.sendGroupText(turn.groupId, turn.text);
       chatStateEngine.markProactiveSent(turn.groupId, turn.now);
+      this.emit({
+        type: "proactive_sent",
+        groupId: turn.groupId,
+        reason: turn.reason,
+        topic: turn.topic,
+      });
       console.info(
         `[chat] proactive_sent group=${turn.groupId} reason=${turn.reason} topic=${turn.topic}`,
       );
     } catch (error) {
+      const normalizedError = error instanceof Error ? error.message : String(error);
+      this.emit({
+        type: "proactive_failed",
+        groupId: turn.groupId,
+        reason: turn.reason,
+        topic: turn.topic,
+        error: normalizedError,
+      });
       console.warn(`[chat] proactive failed group=${turn.groupId}`, error);
     } finally {
       this.pendingProactiveGroups.delete(turn.groupId);
+    }
+  }
+
+  private emit(event: ChatAgentLoopEvent): void {
+    if (this.listeners.size <= 0) {
+      return;
+    }
+    const observed: ChatAgentLoopObservedEvent = {
+      ...event,
+      eventId: ++this.eventId,
+      ts: Date.now(),
+      runtime: this.getRuntimeSnapshot(),
+    };
+    for (const listener of this.listeners) {
+      try {
+        listener(observed);
+      } catch (error) {
+        console.warn("[chat] loop event listener failed:", error);
+      }
     }
   }
 }
