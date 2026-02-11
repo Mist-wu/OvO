@@ -12,6 +12,7 @@ import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
+import { ChatStateEngine } from "../src/chat/state_engine";
 import { SkillLoader } from "../src/skills/runtime/loader";
 import { SkillRegistry } from "../src/skills/runtime/registry";
 import { SkillExecutor } from "../src/skills/runtime/executor";
@@ -298,12 +299,76 @@ async function main() {
       scope: "private",
       mediaCount: 0,
       eventTimeMs: 1739145600000,
+      stateContext: {
+        emotionLabel: "curious",
+        emotionScore: 0.3,
+        userProfileText: "称呼:阿星 | 累计消息:10 | 互动层级:中互动",
+        relationshipText: "当前互动亲和度:中性",
+        groupTopicText: "TypeScript / NapCat",
+        groupActivityText: "中活跃（近10分钟消息12条）",
+      },
       toolContext: "工具结果（网页搜索）：\n搜索词：北京天气",
     });
 
     assert.equal(prompt.includes("当前消息时间（NapCat事件时间）："), true);
     assert.equal(prompt.includes("工具调用上下文："), true);
     assert.equal(prompt.includes("搜索词：北京天气"), true);
+    assert.equal(prompt.includes("当前情感：curious"), true);
+    assert.equal(prompt.includes("目标用户信息："), true);
+  });
+
+  await runTest("chat state engine provides prompt context and trigger hints", async () => {
+    const engine = new ChatStateEngine();
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 321,
+      userId: 1001,
+      senderName: "阿星",
+      text: "我最近在研究 TypeScript 项目架构，感觉很上头！",
+    });
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 321,
+      userId: 1002,
+      senderName: "阿月",
+      text: "NapCat 的事件字段要按文档来，别硬写",
+    });
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 321,
+      userId: 1001,
+      senderName: "阿星",
+      text: "这个话题我还想继续聊下去",
+    });
+    engine.recordReply(
+      {
+        scope: "group",
+        groupId: 321,
+        userId: 1001,
+        senderName: "阿星",
+        text: "继续",
+      },
+      "继续聊",
+    );
+
+    const context = engine.getPromptState({
+      scope: "group",
+      groupId: 321,
+      userId: 1001,
+      senderName: "阿星",
+      text: "TypeScript 这块怎么拆层？",
+    });
+    assert.equal(context.userProfileText.includes("阿星"), true);
+    assert.equal(context.groupTopicText !== "暂无稳定话题", true);
+
+    const hints = engine.getTriggerHints({
+      scope: "group",
+      groupId: 321,
+      userId: 1001,
+      text: "TypeScript 分层实践有推荐吗？",
+    });
+    assert.equal(Number.isFinite(hints.userAffinityBoost), true);
+    assert.equal(hints.topicRelevanceBoost >= 0, true);
   });
 
   await runTest("resolve visual inputs supports data-uri gif", async () => {

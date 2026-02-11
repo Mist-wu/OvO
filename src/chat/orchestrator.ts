@@ -6,6 +6,7 @@ import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
 import { generateChatReply } from "./reply";
 import { createSessionKey, InMemorySessionStore } from "./session_store";
+import { chatStateEngine } from "./state_engine";
 import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
 import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
@@ -44,7 +45,8 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       };
     }
 
-    return decideTrigger(event, config.chat.botAliases);
+    const hints = chatStateEngine.getTriggerHints(event);
+    return decideTrigger(event, config.chat.botAliases, hints);
   }
 
   async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
@@ -56,6 +58,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const sessionKey = createSessionKey(event);
     const history = this.sessions.get(sessionKey);
     const memoryContext = this.memory.getContext(event, sessionKey);
+    const stateContext = chatStateEngine.getPromptState(event);
     const persona = getPersonaProfile();
     const visuals = await resolveVisualInputs(event.segments);
     const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
@@ -82,6 +85,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       scope: event.scope,
       mediaCount: visuals.length,
       eventTimeMs: event.eventTimeMs,
+      stateContext,
       toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
     });
 
@@ -128,6 +132,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       sessionKey,
       userText: normalizedUserText,
     });
+    chatStateEngine.recordReply(event, replyText);
   }
 }
 

@@ -1,6 +1,7 @@
 import type { MessageSegment } from "../napcat/message";
 import { hasVisualSegments } from "./media";
 import type { ChatEvent, TriggerDecision } from "./types";
+import type { TriggerRuntimeHints } from "./state_engine";
 
 function hasAtSelf(segments: MessageSegment[] | undefined, selfId: number | undefined): boolean {
   if (!Array.isArray(segments)) return false;
@@ -54,6 +55,18 @@ function getUserAffinity(userId: number): number {
   return (ratio - 0.5) * 0.35;
 }
 
+function normalizeAffinity(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return clamp01((value + 0.35) / 0.7) * 0.7 - 0.35;
+}
+
+function normalizeBoost(value: number | undefined, max: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  if (value > max) return max;
+  if (value < -max) return -max;
+  return value;
+}
+
 function isLikelyUnfinishedText(text: string): boolean {
   const normalized = text.trim();
   if (!normalized) return true;
@@ -98,7 +111,11 @@ function getGroupWaitMs(text: string): number {
   return isLikelyUnfinishedText(text) ? 1500 : 850;
 }
 
-export function decideTrigger(event: ChatEvent, aliases: string[]): TriggerDecision {
+export function decideTrigger(
+  event: ChatEvent,
+  aliases: string[],
+  hints?: Partial<TriggerRuntimeHints>,
+): TriggerDecision {
   const text = event.text.trim();
   const hasVisual = hasVisualSegments(event.segments);
   const hasContent = text.length > 0 || hasVisual;
@@ -163,8 +180,11 @@ export function decideTrigger(event: ChatEvent, aliases: string[]): TriggerDecis
   }
 
   const topicScore = getTopicScore(text, hasVisual);
-  const userAffinity = getUserAffinity(event.userId);
-  const willingness = clamp01(0.22 + topicScore + userAffinity);
+  const baseAffinity = getUserAffinity(event.userId);
+  const userAffinity = normalizeAffinity(hints?.userAffinityBoost, baseAffinity);
+  const topicRelevanceBoost = normalizeBoost(hints?.topicRelevanceBoost, 0.2);
+  const groupHeatBoost = normalizeBoost(hints?.groupHeatBoost, 0.1);
+  const willingness = clamp01(0.22 + topicScore + userAffinity + topicRelevanceBoost + groupHeatBoost);
   const threshold = 0.62;
 
   if (willingness >= threshold) {

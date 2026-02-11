@@ -1,4 +1,5 @@
 import { buildPersonaPrompt } from "./persona";
+import type { PromptStateContext } from "./state_engine";
 import type { PersonaProfile, SessionMessage } from "./types";
 
 export type BuildContextInput = {
@@ -11,6 +12,7 @@ export type BuildContextInput = {
   scope: "group" | "private";
   mediaCount: number;
   eventTimeMs?: number;
+  stateContext?: PromptStateContext;
   toolContext?: string;
 };
 
@@ -55,12 +57,31 @@ export function buildPrompt(input: BuildContextInput): string {
   const userNameHint = input.userDisplayName ? `用户称呼参考：${input.userDisplayName}` : "用户称呼参考：未知";
   const timeHint = `当前消息时间（NapCat事件时间）：${formatEventTime(input.eventTimeMs)}`;
   const toolContext = input.toolContext?.trim() || "(本轮未调用工具)";
+  const emotionHint =
+    input.stateContext
+      ? `当前情感：${input.stateContext.emotionLabel} (score=${input.stateContext.emotionScore.toFixed(2)})`
+      : "当前情感：未知";
+  const userProfileHint = input.stateContext
+    ? `目标用户信息：${input.stateContext.userProfileText}；${input.stateContext.relationshipText}`
+    : "目标用户信息：未知";
+  const groupTopicHint =
+    input.scope === "group"
+      ? `群聊主话题：${input.stateContext?.groupTopicText ?? "未知"}`
+      : "群聊主话题：私聊场景";
+  const groupActivityHint =
+    input.scope === "group"
+      ? `群活跃度：${input.stateContext?.groupActivityText ?? "未知"}`
+      : "群活跃度：私聊场景";
 
   return [
     personaPrompt,
     `场景：${scene}`,
     timeHint,
     userNameHint,
+    emotionHint,
+    userProfileHint,
+    groupTopicHint,
+    groupActivityHint,
     mediaHint,
     "工具调用上下文：",
     toolContext,

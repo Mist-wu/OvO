@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { chatOrchestrator } from "../chat";
+import { chatStateEngine } from "../chat/state_engine";
 import { createSessionKey } from "../chat/session_store";
 import type { ChatEvent, TriggerDecision } from "../chat/types";
 import type { NapcatClient } from "./client";
@@ -109,6 +110,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
 
   const chatEvent = toChatEvent(event, message);
   const chatQueueKey = createSessionKey(chatEvent);
+  chatStateEngine.recordIncoming(chatEvent);
   clearPendingChatDispatch(chatQueueKey);
 
   const decision = chatOrchestrator.decide(chatEvent);
