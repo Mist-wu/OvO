@@ -117,7 +117,7 @@ function pickTemplate(templates: string[], seed: number): string {
   return templates[index];
 }
 
-function buildProactiveText(candidate: ProactiveCandidate, now: number): string {
+export function buildProactiveText(candidate: ProactiveCandidate, now: number): string {
   const seed = now + candidate.groupId;
   if (candidate.reason === "cold_start_breaker") {
     const templates = [

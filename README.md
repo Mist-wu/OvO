@@ -89,6 +89,10 @@
 - 非指令消息会进入聊天编排器：
   - 私聊：默认回复
   - 群聊：仅在 `@bot` / `reply` / 点名别名 时回复（默认别名：`小o`,`ovo`）
+- Agent Loop（统一循环内核）：
+  - `src/chat/agent_loop.ts` 统一收敛聊天回复、工具执行、主动发言调度
+  - 会话级状态机支持 `pending -> queued -> running -> follow-up`
+  - 新消息可覆盖延迟中的旧回复，并在运行中对旧 turn 执行过期丢弃（打断/跟进）
 - 会话记忆为内存滑动窗口（重启后清空），用于保持短期上下文连续性
 - Long-term Memory V1：
   - 持久化用户长期记忆（身份/偏好/关系/梗等）到 `CHAT_MEMORY_PATH`

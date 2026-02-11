@@ -1,8 +1,6 @@
 import { config } from "../config";
-import { chatOrchestrator } from "../chat";
-import { chatStateEngine } from "../chat/state_engine";
-import { createSessionKey } from "../chat/session_store";
-import type { ChatEvent, TriggerDecision } from "../chat/types";
+import { chatAgentLoop } from "../chat";
+import type { ChatEvent } from "../chat/types";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
 import { parseCommand } from "./commands/registry";
@@ -19,17 +17,6 @@ import {
   type RequestEvent,
 } from "./commands/types";
 import type { MessageSegment } from "./message";
-
-type PendingChatDispatch = {
-  seq: number;
-  timer: NodeJS.Timeout;
-  client: NapcatClient;
-  event: ChatEvent;
-  decision: TriggerDecision;
-};
-
-const pendingChatDispatches = new Map<string, PendingChatDispatch>();
-let pendingChatSeq = 0;
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
   if (isMessageEvent(event)) {
@@ -63,7 +50,6 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
   const userId = event.user_id;
   const groupId = event.group_id;
   const messageType = event.message_type;
-  const chatQueueKey = createChatQueueKey(event);
 
   if (typeof userId !== "number") {
     return;
@@ -80,8 +66,6 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
     await handleChatMessage(client, event, message);
     return;
   }
-
-  clearPendingChatDispatch(chatQueueKey);
 
   const isRoot =
     typeof config.permissions.rootUserId === "number" && userId === config.permissions.rootUserId;
@@ -109,23 +93,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   if (typeof userId !== "number") return;
 
   const chatEvent = toChatEvent(event, message);
-  const chatQueueKey = createSessionKey(chatEvent);
-  chatStateEngine.recordIncoming(chatEvent);
-  clearPendingChatDispatch(chatQueueKey);
-
-  const decision = chatOrchestrator.decide(chatEvent);
-  if (!decision.shouldReply) return;
-
-  if (decision.waitMs > 0 && decision.priority !== "must") {
-    scheduleChatDispatch(chatQueueKey, {
-      client,
-      event: chatEvent,
-      decision,
-    });
-    return;
-  }
-
-  await dispatchChatReply(client, chatEvent, decision);
+  await chatAgentLoop.onIncomingMessage(client, chatEvent);
 }
 
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
@@ -267,65 +235,4 @@ function toChatEvent(event: MessageEvent, message: string): ChatEvent {
     rawMessage: typeof event.raw_message === "string" ? event.raw_message : undefined,
     segments,
   };
-}
-
-async function dispatchChatReply(
-  client: NapcatClient,
-  event: ChatEvent,
-  decision: TriggerDecision,
-): Promise<void> {
-  const reply = await chatOrchestrator.handle(event, decision);
-  if (!reply) return;
-
-  if (event.scope === "group" && typeof event.groupId === "number") {
-    await client.sendGroupText(event.groupId, reply.text);
-    return;
-  }
-
-  await client.sendPrivateText(event.userId, reply.text);
-}
-
-function scheduleChatDispatch(
-  queueKey: string,
-  pending: Omit<PendingChatDispatch, "seq" | "timer">,
-): void {
-  const seq = ++pendingChatSeq;
-  const waitMs = Math.max(0, Math.floor(pending.decision.waitMs));
-  const timer = setTimeout(() => {
-    void runScheduledChatDispatch(queueKey, seq);
-  }, waitMs);
-
-  pendingChatDispatches.set(queueKey, {
-    ...pending,
-    seq,
-    timer,
-  });
-}
-
-async function runScheduledChatDispatch(queueKey: string, seq: number): Promise<void> {
-  const pending = pendingChatDispatches.get(queueKey);
-  if (!pending || pending.seq !== seq) return;
-
-  pendingChatDispatches.delete(queueKey);
-  try {
-    await dispatchChatReply(pending.client, pending.event, pending.decision);
-  } catch (error) {
-    console.warn("[chat] delayed dispatch failed:", error);
-  }
-}
-
-function clearPendingChatDispatch(queueKey: string): void {
-  const pending = pendingChatDispatches.get(queueKey);
-  if (!pending) return;
-  clearTimeout(pending.timer);
-  pendingChatDispatches.delete(queueKey);
-}
-
-function createChatQueueKey(event: MessageEvent): string {
-  const userId = event.user_id;
-  if (typeof userId !== "number") return "";
-  if (event.message_type === "group" && typeof event.group_id === "number") {
-    return `g:${event.group_id}:u:${userId}`;
-  }
-  return `p:${userId}`;
 }

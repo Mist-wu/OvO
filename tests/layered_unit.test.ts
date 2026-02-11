@@ -6,8 +6,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
 import { config } from "../src/config";
+import { ChatAgentLoop } from "../src/chat/agent_loop";
 import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
 import { resolveVisualInputs } from "../src/chat/media";
+import type { ChatOrchestrator, PreparedChatReply } from "../src/chat/orchestrator";
 import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
@@ -29,6 +31,7 @@ import {
   createSetGroupAddRequestParams,
 } from "../src/napcat/actions";
 import { calculateActionRetryDelayMs } from "../src/napcat/client";
+import type { NapcatClient } from "../src/napcat/client";
 import {
   isMessageEvent,
   isMetaEvent,
@@ -186,6 +189,151 @@ async function main() {
     assert.equal(lowIntent.shouldReply, false);
     assert.equal(lowIntent.reason, "not_triggered");
     assert.equal(lowIntent.willingness < 0.62, true);
+  });
+
+  await runTest("chat agent loop cancels delayed turn on follow-up", async () => {
+    const preparedEvents: string[] = [];
+    const committedEvents: string[] = [];
+    const sentTexts: string[] = [];
+
+    const orchestrator: ChatOrchestrator = {
+      decide(event) {
+        return {
+          shouldReply: true,
+          reason: "private_default",
+          priority: "high",
+          waitMs: event.text === "first" ? 90 : 0,
+          willingness: 0.95,
+        };
+      },
+      async prepare(event): Promise<PreparedChatReply> {
+        preparedEvents.push(event.text);
+        return {
+          event,
+          sessionKey: `p:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: `reply:${event.text}`,
+            from: "llm",
+          },
+        };
+      },
+      commit(prepared) {
+        committedEvents.push(prepared.event.text);
+      },
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const client = {
+      sendPrivateText: async (_userId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendGroupText: async (_groupId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7001,
+      text: "first",
+    });
+    await delay(20);
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7001,
+      text: "second",
+    });
+    await delay(220);
+
+    assert.deepEqual(preparedEvents, ["second"]);
+    assert.deepEqual(committedEvents, ["second"]);
+    assert.deepEqual(sentTexts, ["reply:second"]);
+  });
+
+  await runTest("chat agent loop skips stale running reply after interruption", async () => {
+    const preparedEvents: string[] = [];
+    const committedEvents: string[] = [];
+    const sentTexts: string[] = [];
+
+    const orchestrator: ChatOrchestrator = {
+      decide() {
+        return {
+          shouldReply: true,
+          reason: "private_default",
+          priority: "high",
+          waitMs: 0,
+          willingness: 0.95,
+        };
+      },
+      async prepare(event): Promise<PreparedChatReply> {
+        preparedEvents.push(event.text);
+        if (event.text === "first") {
+          await delay(90);
+        }
+        return {
+          event,
+          sessionKey: `p:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: `reply:${event.text}`,
+            from: "llm",
+          },
+        };
+      },
+      commit(prepared) {
+        committedEvents.push(prepared.event.text);
+      },
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const client = {
+      sendPrivateText: async (_userId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendGroupText: async (_groupId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7002,
+      text: "first",
+    });
+    await delay(10);
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7002,
+      text: "second",
+    });
+    await delay(260);
+
+    assert.deepEqual(preparedEvents, ["first", "second"]);
+    assert.deepEqual(committedEvents, ["second"]);
+    assert.deepEqual(sentTexts, ["reply:second"]);
   });
 
   await runTest("tool router detects weather location and search query", async () => {

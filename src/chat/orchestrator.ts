@@ -11,8 +11,17 @@ import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
 import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 
+export type PreparedChatReply = {
+  event: ChatEvent;
+  sessionKey: string;
+  normalizedUserText: string;
+  reply: ChatReply;
+};
+
 export interface ChatOrchestrator {
   decide(event: ChatEvent): TriggerDecision;
+  prepare(event: ChatEvent, decision?: TriggerDecision): Promise<PreparedChatReply | null>;
+  commit(prepared: PreparedChatReply): void;
   handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
 }
 
@@ -49,7 +58,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     return decideTrigger(event, config.chat.botAliases, hints);
   }
 
-  async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
+  async prepare(event: ChatEvent, decisionInput?: TriggerDecision): Promise<PreparedChatReply | null> {
     const decision = decisionInput ?? this.decide(event);
     if (!decision.shouldReply) {
       return null;
@@ -65,13 +74,17 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const toolResult = await routeChatTool(event);
 
     if (toolResult.type === "direct") {
-      this.recordConversationTurn(sessionKey, event, normalizedUserText, toolResult.text);
       return {
-        text: toolResult.text,
-        from: "tool",
-        reason: decision.reason,
-        priority: decision.priority,
-        willingness: decision.willingness,
+        event,
+        sessionKey,
+        normalizedUserText,
+        reply: {
+          text: toolResult.text,
+          from: "tool",
+          reason: decision.reason,
+          priority: decision.priority,
+          willingness: decision.willingness,
+        },
       };
     }
 
@@ -101,14 +114,35 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
           }
         : generated;
 
-    this.recordConversationTurn(sessionKey, event, normalizedUserText, reply.text);
-
     return {
-      ...reply,
-      reason: decision.reason,
-      priority: decision.priority,
-      willingness: decision.willingness,
+      event,
+      sessionKey,
+      normalizedUserText,
+      reply: {
+        ...reply,
+        reason: decision.reason,
+        priority: decision.priority,
+        willingness: decision.willingness,
+      },
     };
+  }
+
+  commit(prepared: PreparedChatReply): void {
+    this.recordConversationTurn(
+      prepared.sessionKey,
+      prepared.event,
+      prepared.normalizedUserText,
+      prepared.reply.text,
+    );
+  }
+
+  async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
+    const prepared = await this.prepare(event, decisionInput);
+    if (!prepared) {
+      return null;
+    }
+    this.commit(prepared);
+    return prepared.reply;
   }
 
   private recordConversationTurn(

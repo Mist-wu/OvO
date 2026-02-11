@@ -1,4 +1,4 @@
-import { runProactiveTick } from "../chat/proactive";
+import { chatAgentLoop } from "../chat";
 import { config } from "../config";
 import type { NapcatClient } from "../napcat/client";
 
@@ -13,7 +13,8 @@ export function scheduleLoop(client: NapcatClient): NodeJS.Timeout {
 
     if (proactiveRunning) return;
     proactiveRunning = true;
-    runProactiveTick(client)
+    chatAgentLoop
+      .runSchedulerTick(client)
       .catch((error) => {
         console.warn("[schedule] proactive tick 失败:", error);
       })
