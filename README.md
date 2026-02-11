@@ -93,6 +93,9 @@
   - `src/chat/agent_loop.ts` 统一收敛聊天回复、工具执行、主动发言调度
   - 会话级状态机支持 `pending -> queued -> running -> follow-up`
   - 新消息可覆盖延迟中的旧回复，并在运行中对旧 turn 执行过期丢弃（打断/跟进）
+  - 提供事件总线可观测性（`subscribe()` + 运行态快照）用于排障和监控
+  - 支持硬打断：新消息到来会中断正在进行的回复链路（AbortSignal 贯穿）
+  - 上下文双阶段管线：`transform -> convert`，便于后续做记忆压缩/多模态扩展
 - 会话记忆为内存滑动窗口（重启后清空），用于保持短期上下文连续性
 - Long-term Memory V1：
   - 持久化用户长期记忆（身份/偏好/关系/梗等）到 `CHAT_MEMORY_PATH`

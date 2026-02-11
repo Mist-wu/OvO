@@ -1,6 +1,6 @@
 import { config } from "../config";
 import { configStore } from "../storage/config_store";
-import { buildPrompt } from "./context_builder";
+import { createChatContextPipeline } from "./context_pipeline";
 import { resolveVisualInputs } from "./media";
 import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
@@ -32,6 +32,7 @@ export interface ChatOrchestrator {
 class DefaultChatOrchestrator implements ChatOrchestrator {
   private readonly sessions = new InMemorySessionStore(config.chat.maxSessionMessages);
   private readonly memory = new ChatMemoryManager(this.sessions);
+  private readonly contextPipeline = createChatContextPipeline();
 
   decide(event: ChatEvent): TriggerDecision {
     if (!config.chat.enabled) {
@@ -96,7 +97,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       };
     }
 
-    const prompt = buildPrompt({
+    const prompt = await this.contextPipeline.run({
       persona,
       history,
       archivedSummaries: memoryContext.archivedSummaries,
@@ -108,7 +109,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       eventTimeMs: event.eventTimeMs,
       stateContext,
       toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
-    });
+    }, options?.signal);
 
     const generated = await generateChatReply({
       prompt,

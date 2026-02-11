@@ -19,6 +19,7 @@ import { ChatStateEngine } from "../src/chat/state_engine";
 import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
 import { detectFxIntent } from "../src/utils/fx";
 import { detectTimeIntent, getTimeSummary } from "../src/utils/time";
+import { createChatContextPipeline } from "../src/chat/context_pipeline";
 import { SkillLoader } from "../src/skills/runtime/loader";
 import { SkillRegistry } from "../src/skills/runtime/registry";
 import { SkillExecutor } from "../src/skills/runtime/executor";
@@ -703,6 +704,46 @@ async function main() {
     assert.equal(prompt.includes("搜索词：北京天气"), true);
     assert.equal(prompt.includes("当前情感：curious"), true);
     assert.equal(prompt.includes("目标用户信息："), true);
+  });
+
+  await runTest("chat context pipeline applies transform then convert", async () => {
+    const pipeline = createChatContextPipeline({
+      transformers: [
+        async (input) => ({
+          ...input,
+          userText: `${input.userText} transformed`,
+          longTermFacts: [...input.longTermFacts, "新增事实"],
+        }),
+      ],
+      converter: (input) =>
+        JSON.stringify({
+          userText: input.userText,
+          factCount: input.longTermFacts.length,
+        }),
+    });
+
+    const result = await pipeline.run({
+      persona: {
+        name: "小o",
+        style: "test",
+        slang: [],
+        doNot: [],
+        replyLength: "short",
+      },
+      history: [],
+      archivedSummaries: [],
+      longTermFacts: ["已知事实"],
+      userText: "hello",
+      scope: "private",
+      mediaCount: 0,
+    });
+
+    const parsed = JSON.parse(result) as {
+      userText: string;
+      factCount: number;
+    };
+    assert.equal(parsed.userText, "hello transformed");
+    assert.equal(parsed.factCount, 2);
   });
 
   await runTest("chat state engine provides prompt context and trigger hints", async () => {
