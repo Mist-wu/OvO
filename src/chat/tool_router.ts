@@ -1,9 +1,16 @@
+import { detectFxIntent } from "../utils/fx";
+import { detectTimeIntent } from "../utils/time";
 import { runtimeSkills } from "../skills/runtime";
 import type { ChatEvent } from "./types";
 
 export type ToolRouteResult =
   | { type: "none" }
-  | { type: "direct"; tool: "weather" | "search"; skillName: string; text: string }
+  | {
+      type: "direct";
+      tool: "weather" | "search" | "time" | "fx" | "calc";
+      skillName: string;
+      text: string;
+    }
   | {
       type: "context";
       tool: "search";
@@ -85,6 +92,17 @@ function normalizeSearchQuery(raw: string): string {
   return trimmed.replace(/^关于/, "").trim().slice(0, 120);
 }
 
+export function detectMathExpression(text: string): string | undefined {
+  const normalized = normalizeText(text);
+  if (!normalized || normalized.startsWith("/")) return undefined;
+  if (!/(计算|算一下|等于|求值|表达式|[\d)\]]\s*[+\-*/×xX÷]\s*[\d(\[])/.test(normalized)) {
+    return undefined;
+  }
+  const matched = normalized.match(/([()\d+\-*/×xX÷.\s]{3,120})/);
+  if (!matched) return undefined;
+  return matched[1].trim();
+}
+
 export function detectSearchQuery(text: string): string | undefined {
   const normalized = normalizeText(text);
   if (!normalized || normalized.startsWith("/")) return undefined;
@@ -129,6 +147,60 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
       };
     }
     return { type: "none" };
+  }
+
+  const timeIntent = detectTimeIntent(userText);
+  if (timeIntent) {
+    const result = await runtimeSkills.executor.execute({
+      capability: "time",
+      timezone: timeIntent.timezone,
+      label: timeIntent.label,
+      query: userText,
+    });
+    if (result.handled) {
+      return {
+        type: "direct",
+        tool: "time",
+        skillName: result.skillName,
+        text: result.text,
+      };
+    }
+  }
+
+  const fxIntent = detectFxIntent(userText);
+  if (fxIntent) {
+    const result = await runtimeSkills.executor.execute({
+      capability: "fx",
+      amount: fxIntent.amount,
+      from: fxIntent.from,
+      to: fxIntent.to,
+      query: userText,
+    });
+    if (result.handled) {
+      return {
+        type: "direct",
+        tool: "fx",
+        skillName: result.skillName,
+        text: result.text,
+      };
+    }
+  }
+
+  const expression = detectMathExpression(userText);
+  if (expression) {
+    const result = await runtimeSkills.executor.execute({
+      capability: "calc",
+      expression,
+      query: userText,
+    });
+    if (result.handled) {
+      return {
+        type: "direct",
+        tool: "calc",
+        skillName: result.skillName,
+        text: result.text,
+      };
+    }
   }
 
   const searchQuery = detectSearchQuery(userText);

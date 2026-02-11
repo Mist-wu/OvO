@@ -10,9 +10,12 @@ import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
 import { resolveVisualInputs } from "../src/chat/media";
 import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
-import { detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
+import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import { ChatStateEngine } from "../src/chat/state_engine";
+import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
+import { detectFxIntent } from "../src/utils/fx";
+import { detectTimeIntent, getTimeSummary } from "../src/utils/time";
 import { SkillLoader } from "../src/skills/runtime/loader";
 import { SkillRegistry } from "../src/skills/runtime/registry";
 import { SkillExecutor } from "../src/skills/runtime/executor";
@@ -192,6 +195,34 @@ async function main() {
     assert.equal(detectSearchQuery("帮我搜一下 OpenAI GPT-5 发布说明"), "OpenAI GPT-5 发布说明");
     assert.equal(detectSearchQuery("量子纠缠是什么？"), "量子纠缠是什么");
     assert.equal(detectSearchQuery("/天气 北京"), undefined);
+    assert.equal(detectMathExpression("计算 (1+2)*3"), "(1+2)*3");
+    assert.equal(detectMathExpression("今天心情不错"), undefined);
+  });
+
+  await runTest("time and fx intent detectors parse common expressions", async () => {
+    const time = detectTimeIntent("东京现在几点");
+    assert.ok(time);
+    assert.equal(time?.timezone, "Asia/Tokyo");
+
+    const fx = detectFxIntent("100 美元换成人民币");
+    assert.ok(fx);
+    assert.equal(fx?.from, "USD");
+    assert.equal(fx?.to, "CNY");
+    assert.equal(fx?.amount, 100);
+  });
+
+  await runTest("calc utility evaluates expression safely", async () => {
+    assert.equal(evaluateExpression("(1+2)*3"), 9);
+    assert.equal(calculateExpressionSummary("3+4*2"), "计算结果：3+4*2 = 11");
+    assert.equal(calculateExpressionSummary("3/0").startsWith("计算失败"), true);
+  });
+
+  await runTest("time utility formats summary text", async () => {
+    const summary = getTimeSummary({
+      timezone: "Asia/Shanghai",
+      label: "北京时间",
+    });
+    assert.equal(summary.includes("北京时间 当前时间："), true);
   });
 
   await runTest("skill loader and registry parse SKILL metadata", async () => {
@@ -257,6 +288,32 @@ async function main() {
       ].join("\n"),
       "utf8",
     );
+    fs.mkdirSync(path.join(tmpDir, "time"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "time", "SKILL.md"),
+      [
+        "---",
+        "name: time",
+        "description: time skill",
+        "capability: time",
+        "mode: direct",
+        "---",
+      ].join("\n"),
+      "utf8",
+    );
+    fs.mkdirSync(path.join(tmpDir, "calc"), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, "calc", "SKILL.md"),
+      [
+        "---",
+        "name: calc",
+        "description: calc skill",
+        "capability: calc",
+        "mode: direct",
+        "---",
+      ].join("\n"),
+      "utf8",
+    );
 
     const loader = new SkillLoader(tmpDir);
     const registry = new SkillRegistry(loader);
@@ -270,6 +327,28 @@ async function main() {
     if (searchResult.handled) {
       assert.equal(searchResult.mode, "context");
       assert.equal(searchResult.text.includes("量子纠缠是什么"), true);
+    }
+
+    const timeResult = await executor.execute({
+      capability: "time",
+      timezone: "Asia/Shanghai",
+      label: "北京时间",
+      query: "北京时间",
+    });
+    assert.equal(timeResult.handled, true);
+    if (timeResult.handled) {
+      assert.equal(timeResult.mode, "direct");
+      assert.equal(timeResult.text.includes("当前时间"), true);
+    }
+
+    const calcResult = await executor.execute({
+      capability: "calc",
+      expression: "1+2*3",
+      query: "计算 1+2*3",
+    });
+    assert.equal(calcResult.handled, true);
+    if (calcResult.handled) {
+      assert.equal(calcResult.text.includes("= 7"), true);
     }
 
     const weatherResult = await executor.execute({

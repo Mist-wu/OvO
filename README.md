@@ -34,6 +34,17 @@
   - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`
   - `WEATHER_DEGRADE_ON_FAILURE`
 
+## 搜索与汇率配置
+- 实时搜索：
+  - `SEARCH_TIMEOUT_MS`
+  - `SEARCH_MAX_RESULTS`
+  - `SEARCH_RETRIES`, `SEARCH_RETRY_DELAY_MS`, `SEARCH_CONCURRENCY`
+  - `SEARCH_DEGRADE_ON_FAILURE`
+- 汇率：
+  - `FX_TIMEOUT_MS`
+  - `FX_RETRIES`, `FX_RETRY_DELAY_MS`, `FX_CONCURRENCY`
+  - `FX_DEGRADE_ON_FAILURE`
+
 ## Skills（聊天工具能力）
 - 聊天工具调用改为技能架构：`Skill Loader + Skill Registry + Skill Executor`。
 - Skill 根目录：`src/skills/<skill-name>/SKILL.md`
@@ -43,7 +54,10 @@
   - `src/skills/runtime/executor.ts`
 - 当前内置能力：
   - `weather`（`capability=weather`, direct）
-  - `search`（`capability=search`, context）
+  - `search`（`capability=search`, context，实时网页检索）
+  - `time`（`capability=time`, direct）
+  - `fx`（`capability=fx`, direct）
+  - `calc`（`capability=calc`, direct）
 
 ## NapCat 动作队列治理
 - 动作发送链路支持可配置并发、队列上限、每秒限流与指数退避重试。
@@ -82,7 +96,8 @@
 - 支持图片/GIF 输入解析（`image` 消息段），会作为多模态输入交给 Gemini
 - 聊天工具路由（当前）：
   - 天气问题优先走天气工具并直接返回结果
-  - 搜索类问题通过 `search` skill 注入上下文，再由模型组织回答（当前不做实时网页抓取）
+  - 搜索类问题走实时网页检索（DuckDuckGo + Wikipedia）并注入来源上下文
+  - 时间/汇率/计算类问题优先走 direct skill 直接返回
 - 回复调度（V1）：
   - `@bot` / `reply` / 别名：必回
   - 普通群消息：基于意愿评分择机回复

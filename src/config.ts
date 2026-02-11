@@ -133,6 +133,13 @@ export const config = {
     apiKey: process.env.WEATHER_API_KEY?.trim() || "",
     timeoutMs: numberFromEnv(process.env.WEATHER_TIMEOUT_MS, 8000),
   },
+  search: {
+    timeoutMs: numberFromEnv(process.env.SEARCH_TIMEOUT_MS, 7000),
+    maxResults: numberFromEnv(process.env.SEARCH_MAX_RESULTS, 5),
+  },
+  fx: {
+    timeoutMs: numberFromEnv(process.env.FX_TIMEOUT_MS, 7000),
+  },
   external: {
     circuitBreakerEnabled: booleanFromEnv(process.env.EXTERNAL_CIRCUIT_BREAKER_ENABLED, true),
     circuitFailureThreshold: numberFromEnv(process.env.EXTERNAL_CIRCUIT_FAILURE_THRESHOLD, 3),
@@ -148,6 +155,18 @@ export const config = {
       retryDelayMs: numberFromEnv(process.env.WEATHER_RETRY_DELAY_MS, 150),
       concurrency: numberFromEnv(process.env.WEATHER_CONCURRENCY, 4),
       degradeOnFailure: booleanFromEnv(process.env.WEATHER_DEGRADE_ON_FAILURE, true),
+    },
+    search: {
+      retries: numberFromEnv(process.env.SEARCH_RETRIES, 1),
+      retryDelayMs: numberFromEnv(process.env.SEARCH_RETRY_DELAY_MS, 150),
+      concurrency: numberFromEnv(process.env.SEARCH_CONCURRENCY, 3),
+      degradeOnFailure: booleanFromEnv(process.env.SEARCH_DEGRADE_ON_FAILURE, true),
+    },
+    fx: {
+      retries: numberFromEnv(process.env.FX_RETRIES, 1),
+      retryDelayMs: numberFromEnv(process.env.FX_RETRY_DELAY_MS, 120),
+      concurrency: numberFromEnv(process.env.FX_CONCURRENCY, 2),
+      degradeOnFailure: booleanFromEnv(process.env.FX_DEGRADE_ON_FAILURE, true),
     },
   },
 };

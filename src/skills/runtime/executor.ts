@@ -1,3 +1,7 @@
+import { calculateExpressionSummary } from "../../utils/calc";
+import { fetchFxSummary } from "../../utils/fx";
+import { formatSearchContext, searchWeb } from "../../utils/search_web";
+import { getTimeSummary } from "../../utils/time";
 import { fetchWeatherSummary } from "../../utils/weather";
 import type { SkillExecutionIntent, SkillExecutionResult } from "./types";
 import { SkillRegistry } from "./registry";
@@ -17,7 +21,29 @@ export class SkillExecutor {
     if (intent.capability === "weather") {
       return this.executeWeather(skill.name, intent.location);
     }
-    return this.executeSearch(skill.name, intent.query);
+    if (intent.capability === "search") {
+      return this.executeSearch(skill.name, intent.query);
+    }
+    if (intent.capability === "time") {
+      return this.executeTime(skill.name, {
+        timezone: intent.timezone,
+        label: intent.label,
+      });
+    }
+    if (intent.capability === "fx") {
+      return this.executeFx(skill.name, {
+        amount: intent.amount,
+        from: intent.from,
+        to: intent.to,
+      });
+    }
+    if (intent.capability === "calc") {
+      return this.executeCalc(skill.name, intent.expression);
+    }
+    return {
+      handled: false,
+      reason: "unsupported",
+    };
   }
 
   private async executeWeather(skillName: string, location: string): Promise<SkillExecutionResult> {
@@ -49,18 +75,60 @@ export class SkillExecutor {
   }
 
   private async executeSearch(skillName: string, query: string): Promise<SkillExecutionResult> {
-    const contextText = [
-      `工具结果（技能搜索：${skillName}）`,
-      `查询：${query}`,
-      "当前搜索技能未接入实时网页源，请基于已有知识回答，并明确不确定部分。",
-    ].join("\n");
+    const items = await searchWeb(query);
+    const contextText = formatSearchContext(query, items);
+    const fallbackText =
+      items.length > 0 && items[0].source === "fallback"
+        ? items[0].snippet
+        : `我先根据最新检索结果总结一下：${query}`;
 
     return {
       handled: true,
       mode: "context",
       skillName,
       text: contextText,
-      fallbackText: `我目前没有实时联网搜索源，先按已有知识回答：${query}`,
+      fallbackText,
+    };
+  }
+
+  private async executeTime(
+    skillName: string,
+    input: {
+      timezone: string;
+      label: string;
+    },
+  ): Promise<SkillExecutionResult> {
+    return {
+      handled: true,
+      mode: "direct",
+      skillName,
+      text: getTimeSummary(input),
+    };
+  }
+
+  private async executeFx(
+    skillName: string,
+    input: {
+      amount: number;
+      from: string;
+      to: string;
+    },
+  ): Promise<SkillExecutionResult> {
+    const text = await fetchFxSummary(input);
+    return {
+      handled: true,
+      mode: "direct",
+      skillName,
+      text,
+    };
+  }
+
+  private async executeCalc(skillName: string, expression: string): Promise<SkillExecutionResult> {
+    return {
+      handled: true,
+      mode: "direct",
+      skillName,
+      text: calculateExpressionSummary(expression),
     };
   }
 }

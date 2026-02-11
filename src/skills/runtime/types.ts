@@ -1,4 +1,4 @@
-export type SkillCapability = "weather" | "search" | string;
+export type SkillCapability = "weather" | "search" | "time" | "fx" | "calc" | string;
 
 export type SkillFrontMatter = {
   name: string;
@@ -40,5 +40,23 @@ export type SkillExecutionIntent =
     }
   | {
       capability: "search";
+      query: string;
+    }
+  | {
+      capability: "time";
+      timezone: string;
+      label: string;
+      query: string;
+    }
+  | {
+      capability: "fx";
+      amount: number;
+      from: string;
+      to: string;
+      query: string;
+    }
+  | {
+      capability: "calc";
+      expression: string;
       query: string;
     };
