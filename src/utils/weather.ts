@@ -190,7 +190,7 @@ ${getWindEmoji(windSpeed)} 风况: ${windDir} ${windSpeed}
   }
 }
 
-export async function fetchWeatherSummary(location: string): Promise<string> {
+export async function fetchWeatherSummary(location: string, signal?: AbortSignal): Promise<string> {
   const city = location.trim();
   if (!city) {
     throw new Error("[weather] location is required");
@@ -213,6 +213,7 @@ export async function fetchWeatherSummary(location: string): Promise<string> {
       service: "weather",
       operation: "fetch_summary",
       timeoutMs: config.weather.timeoutMs,
+      signal,
       retries: config.external.weather.retries,
       retryDelayMs: config.external.weather.retryDelayMs,
       concurrency: config.external.weather.concurrency,
@@ -248,6 +249,9 @@ export async function fetchWeatherSummary(location: string): Promise<string> {
 
 function resolveWeatherFallback(error: ExternalCallError): string {
   const cause = error.cause;
+  if (cause instanceof Error && cause.name === "AbortError") {
+    throw cause;
+  }
   if (cause instanceof Error && cause.message.includes("WEATHER_API_KEY")) {
     throw cause;
   }

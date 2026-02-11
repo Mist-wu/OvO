@@ -61,7 +61,13 @@ export type ChatAgentLoopEvent =
       type: "turn_dropped";
       sessionKey: string;
       seq: number;
-      reason: "stale" | "filtered";
+      reason: "stale" | "filtered" | "aborted";
+    }
+  | {
+      type: "turn_interrupt_requested";
+      sessionKey: string;
+      runningSeq: number;
+      nextSeq: number;
     }
   | {
       type: "turn_sent";
@@ -152,6 +158,7 @@ type SessionLoopState = {
   pendingTurn?: ReplyTurn;
   queuedSeq?: number;
   runningSeq?: number;
+  runningAbortController?: AbortController;
   followUpTurn?: ReplyTurn;
 };
 
@@ -166,6 +173,12 @@ function hasBusySession(state: SessionLoopState): boolean {
     state.runningSeq !== undefined ||
     state.followUpTurn !== undefined
   );
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return true;
+  return /abort/i.test(error.message);
 }
 
 export class ChatAgentLoop {
@@ -250,6 +263,15 @@ export class ChatAgentLoop {
     this.clearPendingTurn(session);
 
     if (session.runningSeq !== undefined || session.queuedSeq !== undefined) {
+      if (session.runningAbortController && session.runningSeq !== undefined) {
+        this.emit({
+          type: "turn_interrupt_requested",
+          sessionKey,
+          runningSeq: session.runningSeq,
+          nextSeq: turn.seq,
+        });
+        session.runningAbortController.abort();
+      }
       if (previousFollowUpSeq !== undefined && previousFollowUpSeq !== turn.seq) {
         this.emit({
           type: "turn_followup_replaced",
@@ -448,6 +470,8 @@ export class ChatAgentLoop {
     }
 
     session.runningSeq = turn.seq;
+    const abortController = new AbortController();
+    session.runningAbortController = abortController;
     this.emit({
       type: "turn_started",
       sessionKey,
@@ -456,7 +480,9 @@ export class ChatAgentLoop {
     });
 
     try {
-      const prepared = await this.orchestrator.prepare(turn.event, turn.decision);
+      const prepared = await this.orchestrator.prepare(turn.event, turn.decision, {
+        signal: abortController.signal,
+      });
       if (!prepared) {
         this.emit({
           type: "turn_dropped",
@@ -477,6 +503,16 @@ export class ChatAgentLoop {
         return;
       }
 
+      if (abortController.signal.aborted) {
+        this.emit({
+          type: "turn_dropped",
+          sessionKey,
+          seq: turn.seq,
+          reason: "aborted",
+        });
+        return;
+      }
+
       await this.sendReply(turn.client, turn.event, prepared.reply.text);
       this.orchestrator.commit(prepared);
       this.emit({
@@ -487,6 +523,15 @@ export class ChatAgentLoop {
         length: prepared.reply.text.length,
       });
     } catch (error) {
+      if (isAbortError(error) || abortController.signal.aborted) {
+        this.emit({
+          type: "turn_dropped",
+          sessionKey,
+          seq: turn.seq,
+          reason: "aborted",
+        });
+        return;
+      }
       const normalizedError = error instanceof Error ? error.message : String(error);
       this.emit({
         type: "turn_failed",
@@ -497,6 +542,7 @@ export class ChatAgentLoop {
       console.warn("[chat] agent_loop reply failed:", error);
     } finally {
       session.runningSeq = undefined;
+      session.runningAbortController = undefined;
       this.afterReplyTurn(sessionKey, session, turn.seq);
     }
   }

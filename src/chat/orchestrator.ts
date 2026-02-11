@@ -20,7 +20,11 @@ export type PreparedChatReply = {
 
 export interface ChatOrchestrator {
   decide(event: ChatEvent): TriggerDecision;
-  prepare(event: ChatEvent, decision?: TriggerDecision): Promise<PreparedChatReply | null>;
+  prepare(
+    event: ChatEvent,
+    decision?: TriggerDecision,
+    options?: { signal?: AbortSignal },
+  ): Promise<PreparedChatReply | null>;
   commit(prepared: PreparedChatReply): void;
   handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
 }
@@ -58,7 +62,11 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     return decideTrigger(event, config.chat.botAliases, hints);
   }
 
-  async prepare(event: ChatEvent, decisionInput?: TriggerDecision): Promise<PreparedChatReply | null> {
+  async prepare(
+    event: ChatEvent,
+    decisionInput?: TriggerDecision,
+    options?: { signal?: AbortSignal },
+  ): Promise<PreparedChatReply | null> {
     const decision = decisionInput ?? this.decide(event);
     if (!decision.shouldReply) {
       return null;
@@ -69,9 +77,9 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const memoryContext = this.memory.getContext(event, sessionKey);
     const stateContext = chatStateEngine.getPromptState(event);
     const persona = getPersonaProfile();
-    const visuals = await resolveVisualInputs(event.segments);
+    const visuals = await resolveVisualInputs(event.segments, options?.signal);
     const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
-    const toolResult = await routeChatTool(event);
+    const toolResult = await routeChatTool(event, options?.signal);
 
     if (toolResult.type === "direct") {
       return {
@@ -105,6 +113,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const generated = await generateChatReply({
       prompt,
       visuals,
+      signal: options?.signal,
     });
     const reply =
       toolResult.type === "context" && generated.from === "fallback"

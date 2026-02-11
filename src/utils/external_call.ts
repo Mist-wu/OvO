@@ -18,6 +18,7 @@ export type ExternalCallOptions<T = unknown> = {
   service: string;
   operation: string;
   timeoutMs: number;
+  signal?: AbortSignal;
   retries?: number;
   retryDelayMs?: number;
   concurrency?: number;
@@ -132,8 +133,39 @@ function isRetryableByDefault(error: Error): boolean {
   return false;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function isAbortError(error: Error): boolean {
+  if (error.name === "AbortError") return true;
+  const message = `${error.name} ${error.message}`.toLowerCase();
+  return message.includes("abort");
+}
+
+function createAbortError(service: string, operation: string): Error {
+  const error = new Error(
+    `[external] aborted service=${service} operation=${operation}`,
+  );
+  error.name = "AbortError";
+  return error;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  if (signal.aborted) {
+    return Promise.reject(new Error("aborted"));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("aborted"));
+    };
+    signal.addEventListener("abort", onAbort);
+  });
 }
 
 function createTimeoutError(service: string, operation: string, timeoutMs: number): Error {
@@ -208,6 +240,18 @@ export async function runExternalCall<T>(
     options.circuitBreaker?.key?.trim() || `${options.service}:${options.operation}`;
   const circuitState = circuitEnabled ? getCircuitState(circuitKey) : null;
 
+  if (options.signal?.aborted) {
+    const abortedError = new ExternalCallError({
+      service: options.service,
+      operation: options.operation,
+      attempts: 0,
+      retryable: false,
+      reason: "call_failed",
+      cause: createAbortError(options.service, options.operation),
+    });
+    return resolveFallbackOrThrow(options.fallback, abortedError);
+  }
+
   await gate.acquire();
   try {
     if (circuitState) {
@@ -225,8 +269,29 @@ export async function runExternalCall<T>(
     for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
       const controller = new AbortController();
       let timer: NodeJS.Timeout | null = null;
+      let removeParentAbortListener: (() => void) | null = null;
 
       try {
+        if (options.signal) {
+          const parentSignal = options.signal;
+          const onParentAbort = () => {
+            controller.abort();
+          };
+          parentSignal.addEventListener("abort", onParentAbort);
+          removeParentAbortListener = () => {
+            parentSignal.removeEventListener("abort", onParentAbort);
+          };
+        }
+
+        const abortPromise = new Promise<never>((_, reject) => {
+          controller.signal.addEventListener(
+            "abort",
+            () => {
+              reject(createAbortError(options.service, options.operation));
+            },
+            { once: true },
+          );
+        });
         const timeoutPromise = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -237,6 +302,7 @@ export async function runExternalCall<T>(
         const result = await Promise.race([
           runner({ signal: controller.signal, attempt }),
           timeoutPromise,
+          abortPromise,
         ]);
 
         if (circuitState) {
@@ -245,6 +311,19 @@ export async function runExternalCall<T>(
         return result;
       } catch (error) {
         const normalized = normalizeError(error);
+        const abortedByCaller = options.signal?.aborted || isAbortError(normalized);
+        if (abortedByCaller) {
+          const finalError = new ExternalCallError({
+            service: options.service,
+            operation: options.operation,
+            attempts: attempt,
+            retryable: false,
+            reason: "call_failed",
+            cause: normalized,
+          });
+          return resolveFallbackOrThrow(options.fallback, finalError);
+        }
+
         const retryable = shouldRetry(normalized);
 
         if (circuitState) {
@@ -256,7 +335,19 @@ export async function runExternalCall<T>(
             `[external] retry service=${options.service} operation=${options.operation} attempt=${attempt} reason=${normalized.message}`,
           );
           if (retryDelayMs > 0) {
-            await sleep(retryDelayMs * attempt);
+            try {
+              await sleep(retryDelayMs * attempt, options.signal);
+            } catch {
+              const abortedError = new ExternalCallError({
+                service: options.service,
+                operation: options.operation,
+                attempts: attempt,
+                retryable: false,
+                reason: "call_failed",
+                cause: createAbortError(options.service, options.operation),
+              });
+              return resolveFallbackOrThrow(options.fallback, abortedError);
+            }
           }
           continue;
         }
@@ -271,6 +362,9 @@ export async function runExternalCall<T>(
         });
         return resolveFallbackOrThrow(options.fallback, finalError);
       } finally {
+        if (removeParentAbortListener) {
+          removeParentAbortListener();
+        }
         if (timer) clearTimeout(timer);
       }
     }

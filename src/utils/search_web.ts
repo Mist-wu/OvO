@@ -154,7 +154,7 @@ async function fetchWikipedia(query: string, signal: AbortSignal): Promise<WebSe
   return items;
 }
 
-export async function searchWeb(query: string): Promise<WebSearchItem[]> {
+export async function searchWeb(query: string, signal?: AbortSignal): Promise<WebSearchItem[]> {
   const normalizedQuery = normalizeText(query);
   if (!normalizedQuery) return [];
 
@@ -171,6 +171,7 @@ export async function searchWeb(query: string): Promise<WebSearchItem[]> {
       service: "search",
       operation: "web_query",
       timeoutMs: config.search.timeoutMs,
+      signal,
       retries: config.external.search.retries,
       retryDelayMs: config.external.search.retryDelayMs,
       concurrency: config.external.search.concurrency,
@@ -240,6 +241,10 @@ export function formatSearchContext(query: string, items: WebSearchItem[]): stri
 }
 
 function resolveSearchFallback(error: ExternalCallError): WebSearchItem[] | string {
+  const cause = error.cause;
+  if (cause instanceof Error && cause.name === "AbortError") {
+    throw cause;
+  }
   if (!config.external.search.degradeOnFailure) {
     throw error;
   }

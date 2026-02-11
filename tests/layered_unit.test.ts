@@ -403,6 +403,99 @@ async function main() {
     assert.equal(observed.includes("queue_idle"), true);
   });
 
+  await runTest("chat agent loop requests hard interrupt and aborts running turn", async () => {
+    const events: string[] = [];
+    const droppedReasons: string[] = [];
+    const sentTexts: string[] = [];
+
+    const orchestrator: ChatOrchestrator = {
+      decide() {
+        return {
+          shouldReply: true,
+          reason: "private_default",
+          priority: "high",
+          waitMs: 0,
+          willingness: 0.95,
+        };
+      },
+      async prepare(event, _decision, options): Promise<PreparedChatReply> {
+        if (event.text === "first") {
+          await new Promise<void>((resolve, reject) => {
+            const onAbort = () => {
+              const error = new Error("aborted by next turn");
+              error.name = "AbortError";
+              reject(error);
+            };
+            if (options?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            options?.signal?.addEventListener("abort", onAbort, { once: true });
+            setTimeout(() => {
+              options?.signal?.removeEventListener("abort", onAbort);
+              resolve();
+            }, 150);
+          });
+        }
+        return {
+          event,
+          sessionKey: `p:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: `reply:${event.text}`,
+            from: "llm",
+          },
+        };
+      },
+      commit() {},
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const unsubscribe = loop.subscribe((event) => {
+      events.push(event.type);
+      if (event.type === "turn_dropped") {
+        droppedReasons.push(event.reason);
+      }
+    });
+    const client = {
+      sendPrivateText: async (_userId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendGroupText: async (_groupId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7011,
+      text: "first",
+    });
+    await delay(20);
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7011,
+      text: "second",
+    });
+    await delay(260);
+    unsubscribe();
+
+    assert.equal(events.includes("turn_interrupt_requested"), true);
+    assert.equal(droppedReasons.includes("aborted"), true);
+    assert.deepEqual(sentTexts, ["reply:second"]);
+  });
+
   await runTest("tool router detects weather location and search query", async () => {
     assert.equal(detectWeatherLocation("北京天气怎么样"), "北京");
     assert.equal(detectWeatherLocation("查 上海 天气"), "上海");

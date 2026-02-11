@@ -49,6 +49,7 @@ export async function askGemini(prompt: string): Promise<string> {
 export async function askGeminiWithImages(input: {
   prompt: string;
   inlineImages: GeminiInlineImage[];
+  signal?: AbortSignal;
 }): Promise<string> {
   const normalizedPrompt = input.prompt.trim();
   if (!normalizedPrompt) {
@@ -59,12 +60,13 @@ export async function askGeminiWithImages(input: {
     return Boolean(item?.mimeType && item?.dataBase64);
   });
 
-  return runGeminiCall(normalizedPrompt, normalizedImages);
+  return runGeminiCall(normalizedPrompt, normalizedImages, input.signal);
 }
 
 async function runGeminiCall(
   normalizedPrompt: string,
   inlineImages: GeminiInlineImage[],
+  signal?: AbortSignal,
 ): Promise<string> {
   const circuitBreaker = {
     enabled: config.external.circuitBreakerEnabled,
@@ -78,6 +80,7 @@ async function runGeminiCall(
       service: "gemini",
       operation: "generate_content",
       timeoutMs: config.llm.gemini.timeoutMs,
+      signal,
       retries: config.external.gemini.retries,
       retryDelayMs: config.external.gemini.retryDelayMs,
       concurrency: config.external.gemini.concurrency,
@@ -106,6 +109,9 @@ async function runGeminiCall(
 
 function resolveGeminiFallback(error: ExternalCallError): string {
   const cause = error.cause;
+  if (cause instanceof Error && cause.name === "AbortError") {
+    throw cause;
+  }
   if (cause instanceof Error && cause.message.includes("GEMINI_API_KEY")) {
     throw cause;
   }

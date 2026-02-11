@@ -99,8 +99,18 @@ function toFileSystemPath(ref: string): string {
   return ref;
 }
 
-async function resolveFromRemoteUrl(ref: string): Promise<ChatVisualInput | null> {
+async function resolveFromRemoteUrl(
+  ref: string,
+  signal?: AbortSignal,
+): Promise<ChatVisualInput | null> {
   const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      return null;
+    }
+    signal.addEventListener("abort", onAbort);
+  }
   const timer = setTimeout(() => controller.abort(), config.chat.mediaFetchTimeoutMs);
   try {
     const response = await fetch(ref, { signal: controller.signal });
@@ -134,6 +144,9 @@ async function resolveFromRemoteUrl(ref: string): Promise<ChatVisualInput | null
     return null;
   } finally {
     clearTimeout(timer);
+    if (signal) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 }
 
@@ -159,7 +172,10 @@ async function resolveFromLocalPath(ref: string): Promise<ChatVisualInput | null
   }
 }
 
-async function resolveSingleVisualInput(ref: string): Promise<ChatVisualInput | null> {
+async function resolveSingleVisualInput(
+  ref: string,
+  signal?: AbortSignal,
+): Promise<ChatVisualInput | null> {
   const fromDataUri = parseDataUri(ref);
   if (fromDataUri) {
     return {
@@ -179,7 +195,7 @@ async function resolveSingleVisualInput(ref: string): Promise<ChatVisualInput | 
   }
 
   if (isHttpUrl(ref)) {
-    return resolveFromRemoteUrl(ref);
+    return resolveFromRemoteUrl(ref, signal);
   }
 
   if (isLikelyLocalPath(ref)) {
@@ -196,6 +212,7 @@ export function hasVisualSegments(segments: MessageSegment[] | undefined): boole
 
 export async function resolveVisualInputs(
   segments: MessageSegment[] | undefined,
+  signal?: AbortSignal,
 ): Promise<ChatVisualInput[]> {
   if (!config.chat.mediaEnabled) {
     return [];
@@ -207,7 +224,10 @@ export async function resolveVisualInputs(
   const limitedRefs = refs.slice(0, config.chat.mediaMaxImages);
   const results: ChatVisualInput[] = [];
   for (const ref of limitedRefs) {
-    const resolved = await resolveSingleVisualInput(ref);
+    if (signal?.aborted) {
+      break;
+    }
+    const resolved = await resolveSingleVisualInput(ref, signal);
     if (resolved) {
       results.push(resolved);
     }

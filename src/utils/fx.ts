@@ -109,7 +109,10 @@ export function detectFxIntent(text: string): FxQueryIntent | undefined {
   return undefined;
 }
 
-export async function fetchFxSummary(intent: FxQueryIntent): Promise<string> {
+export async function fetchFxSummary(
+  intent: FxQueryIntent,
+  signal?: AbortSignal,
+): Promise<string> {
   const amount = Number(intent.amount);
   const from = normalizeCurrency(intent.from);
   const to = normalizeCurrency(intent.to);
@@ -129,6 +132,7 @@ export async function fetchFxSummary(intent: FxQueryIntent): Promise<string> {
       service: "fx",
       operation: "exchange_rate",
       timeoutMs: config.fx.timeoutMs,
+      signal,
       retries: config.external.fx.retries,
       retryDelayMs: config.external.fx.retryDelayMs,
       concurrency: config.external.fx.concurrency,
@@ -163,6 +167,10 @@ export async function fetchFxSummary(intent: FxQueryIntent): Promise<string> {
 }
 
 function resolveFxFallback(error: ExternalCallError): string {
+  const cause = error.cause;
+  if (cause instanceof Error && cause.name === "AbortError") {
+    throw cause;
+  }
   if (!config.external.fx.degradeOnFailure) {
     throw error;
   }

@@ -9,7 +9,12 @@ import { SkillRegistry } from "./registry";
 export class SkillExecutor {
   constructor(private readonly registry: SkillRegistry) {}
 
-  async execute(intent: SkillExecutionIntent): Promise<SkillExecutionResult> {
+  async execute(
+    intent: SkillExecutionIntent,
+    options?: {
+      signal?: AbortSignal;
+    },
+  ): Promise<SkillExecutionResult> {
     const skill = this.registry.findFirstByCapability(intent.capability);
     if (!skill) {
       return {
@@ -19,10 +24,10 @@ export class SkillExecutor {
     }
 
     if (intent.capability === "weather") {
-      return this.executeWeather(skill.name, intent.location);
+      return this.executeWeather(skill.name, intent.location, options?.signal);
     }
     if (intent.capability === "search") {
-      return this.executeSearch(skill.name, intent.query);
+      return this.executeSearch(skill.name, intent.query, options?.signal);
     }
     if (intent.capability === "time") {
       return this.executeTime(skill.name, {
@@ -35,7 +40,7 @@ export class SkillExecutor {
         amount: intent.amount,
         from: intent.from,
         to: intent.to,
-      });
+      }, options?.signal);
     }
     if (intent.capability === "calc") {
       return this.executeCalc(skill.name, intent.expression);
@@ -46,9 +51,13 @@ export class SkillExecutor {
     };
   }
 
-  private async executeWeather(skillName: string, location: string): Promise<SkillExecutionResult> {
+  private async executeWeather(
+    skillName: string,
+    location: string,
+    signal?: AbortSignal,
+  ): Promise<SkillExecutionResult> {
     try {
-      const text = await fetchWeatherSummary(location);
+      const text = await fetchWeatherSummary(location, signal);
       return {
         handled: true,
         mode: "direct",
@@ -56,6 +65,9 @@ export class SkillExecutor {
         text,
       };
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("WEATHER_API_KEY")) {
         return {
@@ -74,8 +86,12 @@ export class SkillExecutor {
     }
   }
 
-  private async executeSearch(skillName: string, query: string): Promise<SkillExecutionResult> {
-    const items = await searchWeb(query);
+  private async executeSearch(
+    skillName: string,
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<SkillExecutionResult> {
+    const items = await searchWeb(query, signal);
     const contextText = formatSearchContext(query, items);
     const fallbackText =
       items.length > 0 && items[0].source === "fallback"
@@ -113,8 +129,9 @@ export class SkillExecutor {
       from: string;
       to: string;
     },
+    signal?: AbortSignal,
   ): Promise<SkillExecutionResult> {
-    const text = await fetchFxSummary(input);
+    const text = await fetchFxSummary(input, signal);
     return {
       handled: true,
       mode: "direct",

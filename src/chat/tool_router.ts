@@ -127,7 +127,10 @@ export function detectSearchQuery(text: string): string | undefined {
   return query || undefined;
 }
 
-export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> {
+export async function routeChatTool(
+  event: ChatEvent,
+  signal?: AbortSignal,
+): Promise<ToolRouteResult> {
   const userText = normalizeText(event.text);
   if (!userText) return { type: "none" };
 
@@ -137,7 +140,7 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
       capability: "weather",
       location: weatherLocation,
       query: userText,
-    });
+    }, { signal });
     if (result.handled) {
       return {
         type: "direct",
@@ -156,7 +159,7 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
       timezone: timeIntent.timezone,
       label: timeIntent.label,
       query: userText,
-    });
+    }, { signal });
     if (result.handled) {
       return {
         type: "direct",
@@ -175,7 +178,7 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
       from: fxIntent.from,
       to: fxIntent.to,
       query: userText,
-    });
+    }, { signal });
     if (result.handled) {
       return {
         type: "direct",
@@ -192,7 +195,7 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
       capability: "calc",
       expression,
       query: userText,
-    });
+    }, { signal });
     if (result.handled) {
       return {
         type: "direct",
@@ -211,7 +214,7 @@ export async function routeChatTool(event: ChatEvent): Promise<ToolRouteResult> 
   const result = await runtimeSkills.executor.execute({
     capability: "search",
     query: searchQuery,
-  });
+  }, { signal });
   if (!result.handled) {
     return { type: "none" };
   }
