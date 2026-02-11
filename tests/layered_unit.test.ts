@@ -11,6 +11,7 @@ import { resolveVisualInputs } from "../src/chat/media";
 import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
+import { decideProactiveActions } from "../src/chat/proactive";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import { ChatStateEngine } from "../src/chat/state_engine";
 import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
@@ -448,6 +449,44 @@ async function main() {
     });
     assert.equal(Number.isFinite(hints.userAffinityBoost), true);
     assert.equal(hints.topicRelevanceBoost >= 0, true);
+  });
+
+  await runTest("proactive scheduler selects cold-start and topic continuation", async () => {
+    const now = Date.now();
+    const candidates = decideProactiveActions({
+      snapshots: [
+        {
+          groupId: 101,
+          topic: "暂无稳定话题",
+          topicKeywords: [],
+          messageCountRecent: 2,
+          participantCountRecent: 1,
+          lastMessageAt: now - 5 * 60 * 1000,
+          lastProactiveAt: 0,
+        },
+        {
+          groupId: 102,
+          topic: "TypeScript / NapCat",
+          topicKeywords: ["typescript", "napcat"],
+          messageCountRecent: 20,
+          participantCountRecent: 6,
+          lastMessageAt: now - 2 * 60 * 1000,
+          lastProactiveAt: 0,
+        },
+      ],
+      now,
+      enabledGroups: new Set([101, 102]),
+      idleMs: 4 * 60 * 1000,
+      continueIdleMs: 60 * 1000,
+      minGapMs: 120 * 1000,
+      bubbleIntervalMs: 20 * 60 * 1000,
+      minRecentMessages: 6,
+      maxPerTick: 2,
+    });
+
+    assert.equal(candidates.length, 2);
+    assert.equal(candidates[0].reason, "cold_start_breaker");
+    assert.equal(candidates[1].reason, "topic_continuation");
   });
 
   await runTest("resolve visual inputs supports data-uri gif", async () => {

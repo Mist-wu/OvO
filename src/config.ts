@@ -120,6 +120,19 @@ export const config = {
       8,
     ),
     summaryArchiveMaxPerSession: numberFromEnv(process.env.CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION, 30),
+    proactiveEnabled: booleanFromEnv(process.env.CHAT_PROACTIVE_ENABLED, true),
+    proactiveIdleMs: numberFromEnv(process.env.CHAT_PROACTIVE_IDLE_MS, 4 * 60 * 1000),
+    proactiveContinueIdleMs: numberFromEnv(
+      process.env.CHAT_PROACTIVE_CONTINUE_IDLE_MS,
+      90 * 1000,
+    ),
+    proactiveMinGapMs: numberFromEnv(process.env.CHAT_PROACTIVE_MIN_GAP_MS, 6 * 60 * 1000),
+    proactiveBubbleIntervalMs: numberFromEnv(
+      process.env.CHAT_PROACTIVE_BUBBLE_INTERVAL_MS,
+      25 * 60 * 1000,
+    ),
+    proactiveMinRecentMessages: numberFromEnv(process.env.CHAT_PROACTIVE_MIN_RECENT_MESSAGES, 6),
+    proactiveMaxPerTick: numberFromEnv(process.env.CHAT_PROACTIVE_MAX_PER_TICK, 1),
   },
   llm: {
     gemini: {

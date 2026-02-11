@@ -102,6 +102,10 @@
   - `@bot` / `reply` / 别名：必回
   - 普通群消息：基于意愿评分择机回复
   - 非必回场景：短延迟并可被同会话新消息覆盖（等用户说完）
+- 主动发言（V2）：
+  - 冷场破冰：群聊冷却后自动轻量开场
+  - 话题续接：有主话题时按空窗续接
+  - 定时冒泡：长期无 bot 发言时主动存在感冒泡
 - Gemini失败或返回空文本时，回退到 `CHAT_EMPTY_REPLY_FALLBACK`
 
 ### 聊天配置
@@ -125,6 +129,13 @@
 - `CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES`：每次归档切出的旧消息条数
 - `CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES`：归档后保留在短期上下文中的最新消息数
 - `CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION`：每个会话最多保留的归档摘要数
+- `CHAT_PROACTIVE_ENABLED`：主动发言开关
+- `CHAT_PROACTIVE_IDLE_MS`：冷场破冰触发空窗
+- `CHAT_PROACTIVE_CONTINUE_IDLE_MS`：话题续接最小空窗
+- `CHAT_PROACTIVE_MIN_GAP_MS`：同群两次主动发言最小间隔
+- `CHAT_PROACTIVE_BUBBLE_INTERVAL_MS`：定时冒泡间隔
+- `CHAT_PROACTIVE_MIN_RECENT_MESSAGES`：话题续接最小近窗消息数
+- `CHAT_PROACTIVE_MAX_PER_TICK`：每个调度周期最多主动发言群数
 
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
