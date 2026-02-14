@@ -1,4 +1,5 @@
 import type { GroupStateSnapshot } from "./state_engine";
+import { normalizeNonNegativeInt, normalizePositiveInt } from "../utils/helpers";
 
 export type ProactiveReason = "cold_start_breaker" | "timed_bubble" | "topic_continuation";
 
@@ -21,17 +22,7 @@ export type ProactiveDecisionInput = {
   maxPerTick: number;
 };
 
-function normalizePositiveInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized > 0 ? normalized : fallback;
-}
 
-function normalizeNonNegativeInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized >= 0 ? normalized : fallback;
-}
 
 function hasTopic(snapshot: GroupStateSnapshot): boolean {
   return snapshot.topicKeywords.length > 0 && snapshot.topic !== "暂无稳定话题";

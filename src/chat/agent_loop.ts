@@ -1,3 +1,5 @@
+import { isAbortError } from "../utils/helpers";
+import { logger } from "../utils/logger";
 import { config } from "../config";
 import type { NapcatClient } from "../napcat/client";
 import { configStore } from "../storage/config_store";
@@ -18,104 +20,104 @@ export type ChatAgentLoopRuntimeSnapshot = {
 
 export type ChatAgentLoopEvent =
   | {
-      type: "incoming";
-      sessionKey: string;
-      scope: ChatEvent["scope"];
-      userId: number;
-    }
+    type: "incoming";
+    sessionKey: string;
+    scope: ChatEvent["scope"];
+    userId: number;
+  }
   | {
-      type: "decision";
-      sessionKey: string;
-      shouldReply: boolean;
-      reason: TriggerDecision["reason"];
-      priority: TriggerDecision["priority"];
-      waitMs: number;
-      willingness: number;
-    }
+    type: "decision";
+    sessionKey: string;
+    shouldReply: boolean;
+    reason: TriggerDecision["reason"];
+    priority: TriggerDecision["priority"];
+    waitMs: number;
+    willingness: number;
+  }
   | {
-      type: "turn_waiting";
-      sessionKey: string;
-      seq: number;
-      waitMs: number;
-      queuedAt: number;
-    }
+    type: "turn_waiting";
+    sessionKey: string;
+    seq: number;
+    waitMs: number;
+    queuedAt: number;
+  }
   | {
-      type: "turn_enqueued";
-      sessionKey: string;
-      seq: number;
-      queuedAt: number;
-    }
+    type: "turn_enqueued";
+    sessionKey: string;
+    seq: number;
+    queuedAt: number;
+  }
   | {
-      type: "turn_followup_replaced";
-      sessionKey: string;
-      previousSeq: number;
-      nextSeq: number;
-    }
+    type: "turn_followup_replaced";
+    sessionKey: string;
+    previousSeq: number;
+    nextSeq: number;
+  }
   | {
-      type: "turn_started";
-      sessionKey: string;
-      seq: number;
-      queuedDelayMs: number;
-    }
+    type: "turn_started";
+    sessionKey: string;
+    seq: number;
+    queuedDelayMs: number;
+  }
   | {
-      type: "turn_dropped";
-      sessionKey: string;
-      seq: number;
-      reason: "stale" | "filtered" | "aborted";
-    }
+    type: "turn_dropped";
+    sessionKey: string;
+    seq: number;
+    reason: "stale" | "filtered" | "aborted";
+  }
   | {
-      type: "turn_interrupt_requested";
-      sessionKey: string;
-      runningSeq: number;
-      nextSeq: number;
-    }
+    type: "turn_interrupt_requested";
+    sessionKey: string;
+    runningSeq: number;
+    nextSeq: number;
+  }
   | {
-      type: "turn_sent";
-      sessionKey: string;
-      seq: number;
-      from: "llm" | "fallback" | "tool";
-      length: number;
-    }
+    type: "turn_sent";
+    sessionKey: string;
+    seq: number;
+    from: "llm" | "fallback" | "tool";
+    length: number;
+  }
   | {
-      type: "turn_failed";
-      sessionKey: string;
-      seq: number;
-      error: string;
-    }
+    type: "turn_failed";
+    sessionKey: string;
+    seq: number;
+    error: string;
+  }
   | {
-      type: "turn_completed";
-      sessionKey: string;
-      seq: number;
-      hadFollowUp: boolean;
-    }
+    type: "turn_completed";
+    sessionKey: string;
+    seq: number;
+    hadFollowUp: boolean;
+  }
   | {
-      type: "proactive_enqueued";
-      groupId: number;
-      reason: ProactiveCandidate["reason"];
-      topic: string;
-    }
+    type: "proactive_enqueued";
+    groupId: number;
+    reason: ProactiveCandidate["reason"];
+    topic: string;
+  }
   | {
-      type: "proactive_sent";
-      groupId: number;
-      reason: ProactiveCandidate["reason"];
-      topic: string;
-    }
+    type: "proactive_sent";
+    groupId: number;
+    reason: ProactiveCandidate["reason"];
+    topic: string;
+  }
   | {
-      type: "proactive_skipped";
-      groupId: number;
-      reason: "group_disabled" | "busy_group";
-      topic: string;
-    }
+    type: "proactive_skipped";
+    groupId: number;
+    reason: "group_disabled" | "busy_group";
+    topic: string;
+  }
   | {
-      type: "proactive_failed";
-      groupId: number;
-      reason: ProactiveCandidate["reason"];
-      topic: string;
-      error: string;
-    }
+    type: "proactive_failed";
+    groupId: number;
+    reason: ProactiveCandidate["reason"];
+    topic: string;
+    error: string;
+  }
   | {
-      type: "queue_idle";
-    };
+    type: "queue_idle";
+  };
 
 export type ChatAgentLoopObservedEvent = ChatAgentLoopEvent & {
   eventId: number;
@@ -142,14 +144,14 @@ type ProactiveTurn = {
 
 type QueueTurn =
   | {
-      kind: "reply";
-      sessionKey: string;
-      turn: ReplyTurn;
-    }
+    kind: "reply";
+    sessionKey: string;
+    turn: ReplyTurn;
+  }
   | {
-      kind: "proactive";
-      turn: ProactiveTurn;
-    };
+    kind: "proactive";
+    turn: ProactiveTurn;
+  };
 
 type SessionLoopState = {
   nextSeq: number;
@@ -175,11 +177,7 @@ function hasBusySession(state: SessionLoopState): boolean {
   );
 }
 
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === "AbortError") return true;
-  return /abort/i.test(error.message);
-}
+
 
 export class ChatAgentLoop {
   private readonly sessions = new Map<string, SessionLoopState>();
@@ -189,7 +187,7 @@ export class ChatAgentLoop {
   private eventId = 0;
   private pumping = false;
 
-  constructor(private readonly orchestrator: ChatOrchestrator) {}
+  constructor(private readonly orchestrator: ChatOrchestrator) { }
 
   subscribe(listener: (event: ChatAgentLoopObservedEvent) => void): () => void {
     this.listeners.add(listener);
@@ -539,7 +537,7 @@ export class ChatAgentLoop {
         seq: turn.seq,
         error: normalizedError,
       });
-      console.warn("[chat] agent_loop reply failed:", error);
+      logger.warn("[chat] agent_loop reply failed:", error);
     } finally {
       session.runningSeq = undefined;
       session.runningAbortController = undefined;
@@ -613,7 +611,7 @@ export class ChatAgentLoop {
         reason: turn.reason,
         topic: turn.topic,
       });
-      console.info(
+      logger.info(
         `[chat] proactive_sent group=${turn.groupId} reason=${turn.reason} topic=${turn.topic}`,
       );
     } catch (error) {
@@ -625,7 +623,7 @@ export class ChatAgentLoop {
         topic: turn.topic,
         error: normalizedError,
       });
-      console.warn(`[chat] proactive failed group=${turn.groupId}`, error);
+      logger.warn(`[chat] proactive failed group=${turn.groupId}`, error);
     } finally {
       this.pendingProactiveGroups.delete(turn.groupId);
     }
@@ -645,7 +643,7 @@ export class ChatAgentLoop {
       try {
         listener(observed);
       } catch (error) {
-        console.warn("[chat] loop event listener failed:", error);
+        logger.warn("[chat] loop event listener failed:", error);
       }
     }
   }

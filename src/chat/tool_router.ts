@@ -1,3 +1,4 @@
+import { normalizeText } from "../utils/helpers";
 import { detectFxIntent } from "../utils/fx";
 import { detectTimeIntent } from "../utils/time";
 import { runtimeSkills } from "../skills/runtime";
@@ -6,18 +7,18 @@ import type { ChatEvent } from "./types";
 export type ToolRouteResult =
   | { type: "none" }
   | {
-      type: "direct";
-      tool: "weather" | "search" | "time" | "fx" | "calc";
-      skillName: string;
-      text: string;
-    }
+    type: "direct";
+    tool: "weather" | "search" | "time" | "fx" | "calc";
+    skillName: string;
+    text: string;
+  }
   | {
-      type: "context";
-      tool: "search";
-      skillName: string;
-      contextText: string;
-      fallbackText: string;
-    };
+    type: "context";
+    tool: "search";
+    skillName: string;
+    contextText: string;
+    fallbackText: string;
+  };
 
 const WEATHER_CITY_BLACKLIST = new Set([
   "今天",
@@ -34,9 +35,7 @@ const WEATHER_CITY_BLACKLIST = new Set([
   "全国",
 ]);
 
-function normalizeText(input: string): string {
-  return input.replace(/\s+/g, " ").trim();
-}
+
 
 function stripLeadingWords(input: string): string {
   return input

@@ -1,3 +1,4 @@
+import { clamp01 } from "../utils/helpers";
 import type { MessageSegment } from "../napcat/message";
 import { hasVisualSegments } from "./media";
 import type { ChatEvent, TriggerDecision } from "./types";
@@ -34,12 +35,7 @@ function includesAlias(text: string, aliases: string[]): boolean {
   });
 }
 
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
+
 
 function stableRatio(seed: string): number {
   let hash = 2166136261;

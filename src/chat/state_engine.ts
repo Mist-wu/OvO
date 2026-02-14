@@ -1,7 +1,14 @@
+import { clamp, normalizeText } from "../utils/helpers";
 import { createSessionKey } from "./session_store";
+import {
+  EMOTION_RULES,
+  EMOTION_THRESHOLDS,
+  STOP_WORDS,
+  type EmotionLabel,
+} from "./emotion_dict";
 import type { ChatEvent } from "./types";
 
-export type EmotionLabel = "positive" | "neutral" | "negative" | "curious" | "excited";
+export type { EmotionLabel };
 
 export type PromptStateContext = {
   emotionLabel: EmotionLabel;
@@ -67,51 +74,8 @@ type SessionLiveState = {
 const RECENT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_GROUP_SAMPLES = 80;
 const MAX_USER_KEYWORDS = 40;
-const STOP_WORDS = new Set([
-  "这个",
-  "那个",
-  "就是",
-  "然后",
-  "感觉",
-  "你们",
-  "我们",
-  "他们",
-  "今天",
-  "明天",
-  "现在",
-  "一下",
-  "一下子",
-  "可以",
-  "是不是",
-  "怎么",
-  "为什么",
-  "什么",
-  "一个",
-  "没有",
-  "真的",
-  "哈哈",
-  "hhh",
-  "ok",
-  "好的",
-  "一下",
-  "吗",
-  "呢",
-  "啊",
-  "呀",
-  "啦",
-  "了",
-]);
 
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  if (value < min) return min;
-  if (value > max) return max;
-  return value;
-}
 
-function normalizeText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
 
 function toRecentWindow(messages: GroupMessageSample[], now: number): GroupMessageSample[] {
   return messages.filter((item) => now - item.ts <= RECENT_WINDOW_MS);
@@ -137,16 +101,16 @@ function inferEmotion(text: string): { label: EmotionLabel; score: number } {
   }
 
   let score = 0;
-  if (/(开心|高兴|喜欢|赞|太棒|牛|厉害|哈哈|笑死|好耶)/.test(normalized)) score += 0.5;
-  if (/(难受|烦|气死|无语|崩溃|累|糟糕|讨厌|服了|离谱)/.test(normalized)) score -= 0.55;
-  if (/(吗|呢|\?|？|为啥|为什么|怎么|咋)/.test(normalized)) score += 0.12;
-  if (/[!！]{1,}/.test(normalized)) score += 0.18;
-  if (/(哇|卧槽|逆天|太强|炸裂)/.test(normalized)) score += 0.25;
+  for (const rule of EMOTION_RULES) {
+    if (rule.keywords.some((kw) => normalized.includes(kw))) {
+      score += rule.delta;
+    }
+  }
 
   const clipped = clamp(score, -1, 1);
-  if (clipped >= 0.42) return { label: "positive", score: clipped };
-  if (clipped >= 0.22) return { label: "excited", score: clipped };
-  if (clipped <= -0.38) return { label: "negative", score: clipped };
+  if (clipped >= EMOTION_THRESHOLDS.positiveMin) return { label: "positive", score: clipped };
+  if (clipped >= EMOTION_THRESHOLDS.excitedMin) return { label: "excited", score: clipped };
+  if (clipped <= EMOTION_THRESHOLDS.negativeMax) return { label: "negative", score: clipped };
   if (/[?？]/.test(normalized)) return { label: "curious", score: Math.max(0.08, clipped) };
   return { label: "neutral", score: clipped };
 }
@@ -158,13 +122,13 @@ function mergeEmotion(previous: UserLiveState | undefined, next: { label: Emotio
   const mixed = previous.emotionScore * 0.68 + next.score * 0.32;
   const clipped = clamp(mixed, -1, 1);
   const byScore: EmotionLabel =
-    clipped >= 0.42
+    clipped >= EMOTION_THRESHOLDS.positiveMin
       ? "positive"
-      : clipped >= 0.22
+      : clipped >= EMOTION_THRESHOLDS.excitedMin
         ? "excited"
-        : clipped <= -0.38
+        : clipped <= EMOTION_THRESHOLDS.negativeMax
           ? "negative"
-          : next.label === "curious" && clipped > -0.12
+          : next.label === "curious" && clipped > EMOTION_THRESHOLDS.curiousMinScore
             ? "curious"
             : "neutral";
   return { label: byScore, score: clipped };

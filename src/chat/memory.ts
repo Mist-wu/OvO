@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { clipText, normalizePositiveInt } from "../utils/helpers";
+
 import { config } from "../config";
 import {
   ChatMemoryStore,
@@ -20,17 +22,7 @@ type FactCandidate = {
   content: string;
 };
 
-function normalizePositiveInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized > 0 ? normalized : fallback;
-}
 
-function clipText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
-}
 
 function dedupeFacts(candidates: FactCandidate[]): FactCandidate[] {
   const seen = new Set<string>();

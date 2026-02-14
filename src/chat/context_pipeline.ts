@@ -1,3 +1,4 @@
+import { clipText } from "../utils/helpers";
 import { config } from "../config";
 import { buildPrompt, type BuildContextInput } from "./context_builder";
 
@@ -29,12 +30,6 @@ function ensureNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw createAbortError();
   }
-}
-
-function clipText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
 }
 
 function sanitizeHistory(
