@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import { config } from "../config";
 import { configStore } from "../storage/config_store";
 import { planChatAction } from "./action_planner";
@@ -90,7 +92,35 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     if (plan.type === "no_reply") {
       return null;
     }
-    const persona = getPersonaProfile({ styleVariant: plan.styleVariant });
+    if (plan.type === "wait" && (plan.waitMs ?? 0) > 0) {
+      await delay(Math.max(0, Math.floor(plan.waitMs ?? 0)), undefined, {
+        signal: options?.signal,
+      });
+    }
+
+    const quoteMessageId = plan.shouldQuote ? event.messageId : undefined;
+    if (plan.type === "complete_talk" && plan.completeTalkText) {
+      return {
+        event,
+        sessionKey,
+        normalizedUserText,
+        reply: {
+          text: plan.completeTalkText,
+          from: "tool",
+          quoteMessageId,
+          plannerReason: plan.reason,
+          styleVariant: plan.styleVariant,
+          reason: decision.reason,
+          priority: decision.priority,
+          willingness: decision.willingness,
+        },
+      };
+    }
+
+    const persona = getPersonaProfile({
+      styleVariant: plan.styleVariant,
+      stateContext,
+    });
     const memoryContext = this.memory.getContext(
       event,
       sessionKey,
@@ -101,8 +131,6 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
         }
         : undefined,
     );
-    const quoteMessageId = plan.shouldQuote ? event.messageId : undefined;
-
     if (plan.type === "tool_direct" && toolResult.type === "direct") {
       return {
         event,
@@ -133,7 +161,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       eventTimeMs: event.eventTimeMs,
       stateContext,
       styleVariant: plan.styleVariant,
-      plannerHint: `action=${plan.type}; reason=${plan.reason}; quote=${quoteMessageId !== undefined ? "on" : "off"}; memory=${plan.memoryMode}`,
+      plannerHint: `action=${plan.type}; reason=${plan.reason}; quote=${quoteMessageId !== undefined ? "on" : "off"}; memory=${plan.memoryMode}; waitMs=${plan.waitMs ?? 0}; toolRetry=${plan.toolRetryHint ?? "none"}`,
       toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
     }, options?.signal);
 

@@ -167,6 +167,12 @@ export const config = {
     humanizeEnabled: booleanFromEnv(process.env.CHAT_HUMANIZE_ENABLED, true),
     humanizeTypoProb: numberFromEnv(process.env.CHAT_HUMANIZE_TYPO_PROB, 0.06),
     humanizeSplitProb: numberFromEnv(process.env.CHAT_HUMANIZE_SPLIT_PROB, 0.25),
+    plannerWaitEnabled: booleanFromEnv(process.env.CHAT_PLANNER_WAIT_ENABLED, true),
+    plannerWaitGroupExtraMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_GROUP_EXTRA_MS, 900),
+    plannerWaitPrivateExtraMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_PRIVATE_EXTRA_MS, 420),
+    plannerWaitMaxMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_MAX_MS, 2600),
+    plannerCompleteTalkEnabled: booleanFromEnv(process.env.CHAT_PLANNER_COMPLETE_TALK_ENABLED, true),
+    adaptivePersonaEnabled: booleanFromEnv(process.env.CHAT_ADAPTIVE_PERSONA_ENABLED, true),
     triggerSilenceCompensationEnabled: booleanFromEnv(
       process.env.CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED,
       true,

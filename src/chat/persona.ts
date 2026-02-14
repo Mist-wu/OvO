@@ -1,5 +1,6 @@
 import { config } from "../config";
 import type { ChatStyleVariant } from "./action_planner";
+import type { PromptStateContext } from "./state_engine";
 import type { PersonaProfile } from "./types";
 
 function sanitizeWordList(items: string[]): string[] {
@@ -39,14 +40,73 @@ function resolveSlangByVariant(variant: ChatStyleVariant | undefined): string[] 
   return base;
 }
 
-export function getPersonaProfile(options?: { styleVariant?: ChatStyleVariant }): PersonaProfile {
+function adaptStyleByState(baseStyle: string, stateContext: PromptStateContext | undefined): string {
+  if (!config.chat.adaptivePersonaEnabled || !stateContext) {
+    return baseStyle;
+  }
+
+  const hints: string[] = [];
+  if (stateContext.emotionLabel === "negative") {
+    hints.push("先接住情绪，再给建议。");
+  } else if (stateContext.emotionLabel === "curious") {
+    hints.push("适度追问以确认真实诉求。");
+  }
+  if (stateContext.relationshipText.includes("偏低")) {
+    hints.push("减少熟人式调侃，保持礼貌克制。");
+  } else if (stateContext.relationshipText.includes("偏高")) {
+    hints.push("可自然一些，但避免过火。");
+  }
+
+  return hints.length > 0 ? `${baseStyle}${hints.join("")}` : baseStyle;
+}
+
+function adaptReplyLength(
+  base: PersonaProfile["replyLength"],
+  stateContext: PromptStateContext | undefined,
+): PersonaProfile["replyLength"] {
+  if (!config.chat.adaptivePersonaEnabled || !stateContext) {
+    return base;
+  }
+  if (stateContext.groupActivityText.includes("高活跃")) {
+    return "short";
+  }
+  if (stateContext.emotionLabel === "negative") {
+    return "medium";
+  }
+  return base;
+}
+
+function adaptSlangByState(
+  base: string[],
+  stateContext: PromptStateContext | undefined,
+): string[] {
+  if (!config.chat.adaptivePersonaEnabled || !stateContext) {
+    return base;
+  }
+  if (stateContext.relationshipText.includes("偏低")) {
+    return base.filter((item) => !["逆天", "沃趣", "绷不住了", "笑死"].includes(item));
+  }
+  if (stateContext.emotionLabel === "negative") {
+    return base.filter((item) => !["笑死", "绷不住了"].includes(item));
+  }
+  return base;
+}
+
+export function getPersonaProfile(options?: {
+  styleVariant?: ChatStyleVariant;
+  stateContext?: PromptStateContext;
+}): PersonaProfile {
   const styleVariant = options?.styleVariant;
+  const stateContext = options?.stateContext;
+  const baseStyle = resolveStyleByVariant(styleVariant);
+  const baseSlang = resolveSlangByVariant(styleVariant);
+  const baseReplyLength: PersonaProfile["replyLength"] = styleVariant === "concise" ? "short" : "medium";
   return {
     name: config.chat.personaName,
-    style: resolveStyleByVariant(styleVariant),
-    slang: sanitizeWordList(resolveSlangByVariant(styleVariant)),
+    style: adaptStyleByState(baseStyle, stateContext),
+    slang: sanitizeWordList(adaptSlangByState(baseSlang, stateContext)),
     doNot: sanitizeWordList(["政治煽动", "人身攻击", "泄露隐私", "教唆违法", "编造事实"]),
-    replyLength: styleVariant === "concise" ? "short" : "medium",
+    replyLength: adaptReplyLength(baseReplyLength, stateContext),
   };
 }
 
