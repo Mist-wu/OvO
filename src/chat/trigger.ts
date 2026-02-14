@@ -180,8 +180,11 @@ export function decideTrigger(
   const userAffinity = normalizeAffinity(hints?.userAffinityBoost, baseAffinity);
   const topicRelevanceBoost = normalizeBoost(hints?.topicRelevanceBoost, 0.2);
   const groupHeatBoost = normalizeBoost(hints?.groupHeatBoost, 0.1);
-  const willingness = clamp01(0.22 + topicScore + userAffinity + topicRelevanceBoost + groupHeatBoost);
-  const threshold = 0.62;
+  const silenceCompensationBoost = normalizeBoost(hints?.silenceCompensationBoost, 0.2);
+  const willingness = clamp01(
+    0.22 + topicScore + userAffinity + topicRelevanceBoost + groupHeatBoost + silenceCompensationBoost,
+  );
+  const threshold = clamp01(0.62 - silenceCompensationBoost * 0.45);
 
   if (willingness >= threshold) {
     return {

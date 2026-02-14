@@ -51,6 +51,14 @@ function stringListFromEnv(value: string | undefined, fallback: string[]): strin
   return items.length > 0 ? items : fallback;
 }
 
+function quoteModeFromEnv(value: string | undefined): "auto" | "on" | "off" {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "on" || normalized === "off" || normalized === "auto") {
+    return normalized;
+  }
+  return "auto";
+}
+
 const napcatHost = process.env.NAPCAT_HOST ?? "127.0.0.1";
 const napcatPort = numberFromEnv(process.env.NAPCAT_PORT, 3001);
 const napcatPath = process.env.NAPCAT_WS_PATH ?? "/ws";
@@ -153,6 +161,20 @@ export const config = {
     stateGroupMax: numberFromEnv(process.env.CHAT_STATE_GROUP_MAX, 300),
     stateSessionMax: numberFromEnv(process.env.CHAT_STATE_SESSION_MAX, 3000),
     statePruneIntervalMs: numberFromEnv(process.env.CHAT_STATE_PRUNE_INTERVAL_MS, 60 * 1000),
+    quoteMode: quoteModeFromEnv(process.env.CHAT_QUOTE_MODE),
+    styleVariantEnabled: booleanFromEnv(process.env.CHAT_STYLE_VARIANT_ENABLED, true),
+    styleSwitchProb: numberFromEnv(process.env.CHAT_STYLE_SWITCH_PROB, 0.35),
+    humanizeEnabled: booleanFromEnv(process.env.CHAT_HUMANIZE_ENABLED, true),
+    humanizeTypoProb: numberFromEnv(process.env.CHAT_HUMANIZE_TYPO_PROB, 0.06),
+    humanizeSplitProb: numberFromEnv(process.env.CHAT_HUMANIZE_SPLIT_PROB, 0.25),
+    triggerSilenceCompensationEnabled: booleanFromEnv(
+      process.env.CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED,
+      true,
+    ),
+    triggerSilenceCompensationMax: numberFromEnv(
+      process.env.CHAT_TRIGGER_SILENCE_COMPENSATION_MAX,
+      0.14,
+    ),
   },
   llm: {
     gemini: {

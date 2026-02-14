@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { configStore } from "../storage/config_store";
+import { planChatAction } from "./action_planner";
 import { createChatContextPipeline } from "./context_pipeline";
 import { resolveVisualInputs } from "./media";
 import { ChatMemoryManager } from "./memory";
@@ -75,14 +76,34 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
 
     const sessionKey = createSessionKey(event);
     const history = this.sessions.get(sessionKey);
-    const memoryContext = this.memory.getContext(event, sessionKey);
     const stateContext = chatStateEngine.getPromptState(event);
-    const persona = getPersonaProfile();
     const visuals = await resolveVisualInputs(event.segments, options?.signal);
     const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
     const toolResult = await routeChatTool(event, options?.signal);
+    const plan = planChatAction({
+      event,
+      decision,
+      normalizedUserText,
+      toolResult,
+      stateContext,
+    });
+    if (plan.type === "no_reply") {
+      return null;
+    }
+    const persona = getPersonaProfile({ styleVariant: plan.styleVariant });
+    const memoryContext = this.memory.getContext(
+      event,
+      sessionKey,
+      plan.memoryMode === "lite"
+        ? {
+          factCount: Math.min(3, config.chat.memoryContextFactCount),
+          summaryCount: Math.min(1, config.chat.summaryContextCount),
+        }
+        : undefined,
+    );
+    const quoteMessageId = plan.shouldQuote ? event.messageId : undefined;
 
-    if (toolResult.type === "direct") {
+    if (plan.type === "tool_direct" && toolResult.type === "direct") {
       return {
         event,
         sessionKey,
@@ -90,6 +111,9 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
         reply: {
           text: toolResult.text,
           from: "tool",
+          quoteMessageId,
+          plannerReason: plan.reason,
+          styleVariant: plan.styleVariant,
           reason: decision.reason,
           priority: decision.priority,
           willingness: decision.willingness,
@@ -108,12 +132,15 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       mediaCount: visuals.length,
       eventTimeMs: event.eventTimeMs,
       stateContext,
+      styleVariant: plan.styleVariant,
+      plannerHint: `action=${plan.type}; reason=${plan.reason}; quote=${quoteMessageId !== undefined ? "on" : "off"}; memory=${plan.memoryMode}`,
       toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
     }, options?.signal);
 
     const generated = await generateChatReply({
       prompt,
       visuals,
+      seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
       signal: options?.signal,
     });
     const reply =
@@ -130,6 +157,9 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       normalizedUserText,
       reply: {
         ...reply,
+        quoteMessageId,
+        plannerReason: plan.reason,
+        styleVariant: plan.styleVariant,
         reason: decision.reason,
         priority: decision.priority,
         willingness: decision.willingness,

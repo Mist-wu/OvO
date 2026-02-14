@@ -24,6 +24,7 @@ export type TriggerRuntimeHints = {
   userAffinityBoost: number;
   topicRelevanceBoost: number;
   groupHeatBoost: number;
+  silenceCompensationBoost: number;
 };
 
 export type GroupStateSnapshot = {
@@ -87,6 +88,7 @@ type SessionLiveState = {
   turns: number;
   lastUserText: string;
   lastReplyText: string;
+  silenceStreak: number;
 };
 
 const RECENT_WINDOW_MS = 10 * 60 * 1000;
@@ -272,6 +274,7 @@ export class ChatStateEngine {
       turns: 0,
       lastUserText: "",
       lastReplyText: "",
+      silenceStreak: 0,
     };
     session.lastUpdatedAt = eventTimeMs;
     session.turns += 1;
@@ -331,6 +334,27 @@ export class ChatStateEngine {
     }
   }
 
+  recordTriggerDecision(event: ChatEvent, shouldReply: boolean): void {
+    if (event.scope !== "group" || typeof event.groupId !== "number") {
+      return;
+    }
+    const now = Date.now();
+    this.maybePrune(now);
+
+    const sessionKey = createSessionKey(event);
+    const session = this.sessions.get(sessionKey) ?? {
+      sessionKey,
+      lastUpdatedAt: now,
+      turns: 0,
+      lastUserText: "",
+      lastReplyText: "",
+      silenceStreak: 0,
+    };
+    session.lastUpdatedAt = now;
+    session.silenceStreak = shouldReply ? 0 : session.silenceStreak + 1;
+    this.sessions.set(sessionKey, session);
+  }
+
   getPromptState(event: ChatEvent): PromptStateContext {
     this.maybePrune(Date.now());
 
@@ -380,6 +404,7 @@ export class ChatStateEngine {
         userAffinityBoost: userAffinity,
         topicRelevanceBoost: 0,
         groupHeatBoost: 0,
+        silenceCompensationBoost: 0,
       };
     }
 
@@ -389,6 +414,7 @@ export class ChatStateEngine {
         userAffinityBoost: userAffinity,
         topicRelevanceBoost: 0,
         groupHeatBoost: 0,
+        silenceCompensationBoost: 0,
       };
     }
 
@@ -400,10 +426,21 @@ export class ChatStateEngine {
     const recentMessages = toRecentWindow(group.recentMessages, Date.now());
     const groupHeatBoost = clamp((recentMessages.length - 8) / 120, -0.04, 0.08);
 
+    const session = this.sessions.get(createSessionKey(event));
+    const silenceStreak = session?.silenceStreak ?? 0;
+    const silenceCompensationBoost = config.chat.triggerSilenceCompensationEnabled
+      ? clamp(
+        silenceStreak * 0.035,
+        0,
+        Math.max(0, config.chat.triggerSilenceCompensationMax),
+      )
+      : 0;
+
     return {
       userAffinityBoost: userAffinity,
       topicRelevanceBoost,
       groupHeatBoost,
+      silenceCompensationBoost,
     };
   }
 

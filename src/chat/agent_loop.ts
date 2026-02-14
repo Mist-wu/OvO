@@ -2,11 +2,12 @@ import { isAbortError } from "../utils/helpers";
 import { logger } from "../utils/logger";
 import { config } from "../config";
 import type { NapcatClient } from "../napcat/client";
+import { buildMessage, reply as replySegment, text as textSegment } from "../napcat/message";
 import { configStore } from "../storage/config_store";
 import { buildProactiveText, decideProactiveActions, type ProactiveCandidate } from "./proactive";
 import { createSessionKey } from "./session_store";
 import { chatStateEngine } from "./state_engine";
-import type { ChatEvent, TriggerDecision } from "./types";
+import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 import type { ChatOrchestrator } from "./orchestrator";
 
 export type ChatAgentLoopRuntimeSnapshot = {
@@ -237,6 +238,7 @@ export class ChatAgentLoop {
       waitMs: decision.waitMs,
       willingness: decision.willingness,
     });
+    chatStateEngine.recordTriggerDecision(event, decision.shouldReply);
     if (!decision.shouldReply) {
       return;
     }
@@ -511,7 +513,7 @@ export class ChatAgentLoop {
         return;
       }
 
-      await this.sendReply(turn.client, turn.event, prepared.reply.text);
+      await this.sendReply(turn.client, turn.event, prepared.reply);
       this.orchestrator.commit(prepared);
       this.emit({
         type: "turn_sent",
@@ -564,8 +566,16 @@ export class ChatAgentLoop {
     }
   }
 
-  private async sendReply(client: NapcatClient, event: ChatEvent, text: string): Promise<void> {
+  private async sendReply(client: NapcatClient, event: ChatEvent, reply: ChatReply): Promise<void> {
+    const text = reply.text;
     if (event.scope === "group" && typeof event.groupId === "number") {
+      if (reply.quoteMessageId !== undefined) {
+        await client.sendMessage({
+          groupId: event.groupId,
+          message: buildMessage(replySegment(reply.quoteMessageId), textSegment(text)),
+        });
+        return;
+      }
       await client.sendGroupText(event.groupId, text);
       return;
     }

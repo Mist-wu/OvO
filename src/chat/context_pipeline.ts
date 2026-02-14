@@ -70,6 +70,7 @@ export const defaultChatContextTransformer: ChatContextTransformer = async (inpu
     ...input,
     userText: clipText(input.userText, 800),
     toolContext: input.toolContext ? clipText(input.toolContext, 2600) : input.toolContext,
+    plannerHint: input.plannerHint ? clipText(input.plannerHint, 280) : input.plannerHint,
     history: sanitizeHistory(input.history, maxHistoryItems),
     archivedSummaries: sanitizeStringList(input.archivedSummaries, maxSummaryItems, 260),
     longTermFacts: sanitizeStringList(input.longTermFacts, maxFactItems, 140),

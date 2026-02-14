@@ -1,6 +1,7 @@
 import { buildPersonaPrompt } from "./persona";
 import type { PromptStateContext } from "./state_engine";
 import type { PersonaProfile, SessionMessage } from "./types";
+import type { ChatStyleVariant } from "./action_planner";
 
 export type BuildContextInput = {
   persona: PersonaProfile;
@@ -14,6 +15,8 @@ export type BuildContextInput = {
   eventTimeMs?: number;
   stateContext?: PromptStateContext;
   toolContext?: string;
+  styleVariant?: ChatStyleVariant;
+  plannerHint?: string;
 };
 
 function formatEventTime(eventTimeMs: number | undefined): string {
@@ -72,6 +75,10 @@ export function buildPrompt(input: BuildContextInput): string {
     input.scope === "group"
       ? `群活跃度：${input.stateContext?.groupActivityText ?? "未知"}`
       : "群活跃度：私聊场景";
+  const plannerStyleHint = input.styleVariant
+    ? `表达风格：${input.styleVariant}`
+    : "表达风格：default";
+  const plannerHint = input.plannerHint?.trim() || "(无)";
 
   return [
     personaPrompt,
@@ -82,7 +89,10 @@ export function buildPrompt(input: BuildContextInput): string {
     userProfileHint,
     groupTopicHint,
     groupActivityHint,
+    plannerStyleHint,
     mediaHint,
+    "动作规划提示：",
+    plannerHint,
     "工具调用上下文：",
     toolContext,
     "用户长期记忆（历史偏好/身份/梗）：",

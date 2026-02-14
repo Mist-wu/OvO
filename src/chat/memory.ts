@@ -149,7 +149,14 @@ export class ChatMemoryManager {
     });
   }
 
-  getContext(event: ChatEvent, sessionKey: string): ChatMemoryContext {
+  getContext(
+    event: ChatEvent,
+    sessionKey: string,
+    options?: {
+      factCount?: number;
+      summaryCount?: number;
+    },
+  ): ChatMemoryContext {
     if (!this.store) {
       return {
         longTermFacts: [],
@@ -157,11 +164,19 @@ export class ChatMemoryManager {
       };
     }
 
+    const factCount = Math.max(
+      1,
+      options?.factCount ?? config.chat.memoryContextFactCount,
+    );
+    const summaryCount = Math.max(
+      1,
+      options?.summaryCount ?? config.chat.summaryContextCount,
+    );
     const facts = this.store
-      .getUserFacts(event.userId, config.chat.memoryContextFactCount)
+      .getUserFacts(event.userId, factCount)
       .map((item) => `[${mapCategoryLabel(item.category)}] ${item.content}`);
     const summaries = normalizeSummaryTexts(
-      this.store.getSessionSummaries(sessionKey, config.chat.summaryContextCount),
+      this.store.getSessionSummaries(sessionKey, summaryCount),
     );
 
     return {

@@ -9,6 +9,7 @@ type GenerateChatReplyInput = {
   prompt: string;
   visuals: ChatVisualInput[];
   signal?: AbortSignal;
+  seed?: string;
 };
 
 export async function generateChatReply(input: GenerateChatReplyInput): Promise<ChatReply> {
@@ -29,7 +30,7 @@ export async function generateChatReply(input: GenerateChatReplyInput): Promise<
           signal: input.signal,
         });
     return {
-      text: sanitizeReply(raw),
+      text: sanitizeReply(raw, { seed: input.seed }),
       from: "llm",
     };
   } catch (error) {

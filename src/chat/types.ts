@@ -63,4 +63,7 @@ export type ChatReply = {
   reason?: TriggerReason;
   priority?: ReplyPriority;
   willingness?: number;
+  quoteMessageId?: number | string;
+  plannerReason?: string;
+  styleVariant?: "default" | "warm" | "playful" | "concise";
 };
