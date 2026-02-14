@@ -1,7 +1,4 @@
-import { config } from "../config";
-import type { NapcatClient } from "../napcat/client";
-import { configStore } from "../storage/config_store";
-import { chatStateEngine, type GroupStateSnapshot } from "./state_engine";
+import type { GroupStateSnapshot } from "./state_engine";
 
 export type ProactiveReason = "cold_start_breaker" | "timed_bubble" | "topic_continuation";
 
@@ -143,46 +140,4 @@ export function buildProactiveText(candidate: ProactiveCandidate, now: number): 
     "路过冒个泡，有问题随时丢我。",
   ];
   return pickTemplate(templates, seed);
-}
-
-export async function runProactiveTick(client: NapcatClient, now = Date.now()): Promise<void> {
-  if (!config.chat.proactiveEnabled) return;
-
-  const snapshots = chatStateEngine.listGroupSnapshots(now);
-  if (snapshots.length <= 0) return;
-
-  const enabledGroups = new Set<number>();
-  for (const snapshot of snapshots) {
-    if (configStore.isGroupEnabled(snapshot.groupId)) {
-      enabledGroups.add(snapshot.groupId);
-    }
-  }
-  if (enabledGroups.size <= 0) return;
-
-  const candidates = decideProactiveActions({
-    snapshots,
-    now,
-    enabledGroups,
-    idleMs: config.chat.proactiveIdleMs,
-    continueIdleMs: config.chat.proactiveContinueIdleMs,
-    minGapMs: config.chat.proactiveMinGapMs,
-    bubbleIntervalMs: config.chat.proactiveBubbleIntervalMs,
-    minRecentMessages: config.chat.proactiveMinRecentMessages,
-    maxPerTick: config.chat.proactiveMaxPerTick,
-  });
-  if (candidates.length <= 0) return;
-
-  for (const candidate of candidates) {
-    const text = buildProactiveText(candidate, now);
-    if (!text) continue;
-    try {
-      await client.sendGroupText(candidate.groupId, text);
-      chatStateEngine.markProactiveSent(candidate.groupId, now);
-      console.info(
-        `[chat] proactive_sent group=${candidate.groupId} reason=${candidate.reason} topic=${candidate.topic}`,
-      );
-    } catch (error) {
-      console.warn(`[chat] proactive failed group=${candidate.groupId}`, error);
-    }
-  }
 }
