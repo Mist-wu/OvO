@@ -15,6 +15,7 @@ import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { decideProactiveActions } from "../src/chat/proactive";
+import { getPersonaProfile } from "../src/chat/persona";
 import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
 import { ChatStateEngine } from "../src/chat/state_engine";
 import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
@@ -261,6 +262,64 @@ async function main() {
       },
     });
     assert.equal(plan.type, "no_reply");
+  });
+
+  await runTest("action planner emits wait for unfinished text", async () => {
+    const plan = planChatAction({
+      event: {
+        scope: "private",
+        userId: 30011,
+        text: "然后我还想问",
+      },
+      decision: {
+        shouldReply: true,
+        reason: "private_default",
+        priority: "high",
+        waitMs: 200,
+        willingness: 0.95,
+      },
+      normalizedUserText: "然后我还想问",
+      toolResult: { type: "none" },
+      stateContext: {
+        emotionLabel: "curious",
+        emotionScore: 0.2,
+        userProfileText: "u",
+        relationshipText: "当前互动亲和度:中性",
+        groupTopicText: "私聊场景",
+        groupActivityText: "私聊场景",
+      },
+    });
+    assert.equal(plan.type, "wait");
+    assert.equal((plan.waitMs ?? 0) > 0, true);
+  });
+
+  await runTest("action planner emits complete_talk for closing cue", async () => {
+    const plan = planChatAction({
+      event: {
+        scope: "private",
+        userId: 30012,
+        text: "好的先这样，晚安",
+      },
+      decision: {
+        shouldReply: true,
+        reason: "private_default",
+        priority: "high",
+        waitMs: 120,
+        willingness: 0.95,
+      },
+      normalizedUserText: "好的先这样，晚安",
+      toolResult: { type: "none" },
+      stateContext: {
+        emotionLabel: "neutral",
+        emotionScore: 0,
+        userProfileText: "u",
+        relationshipText: "当前互动亲和度:中性",
+        groupTopicText: "私聊场景",
+        groupActivityText: "私聊场景",
+      },
+    });
+    assert.equal(plan.type, "complete_talk");
+    assert.equal(Boolean(plan.completeTalkText), true);
   });
 
   await runTest("chat agent loop cancels delayed turn on follow-up", async () => {
@@ -854,6 +913,25 @@ async function main() {
     assert.equal(prompt.includes("搜索词：北京天气"), true);
     assert.equal(prompt.includes("当前情感：curious"), true);
     assert.equal(prompt.includes("目标用户信息："), true);
+  });
+
+  await runTest("persona profile adapts by state context", async () => {
+    const persona = getPersonaProfile({
+      styleVariant: "default",
+      stateContext: {
+        emotionLabel: "negative",
+        emotionScore: -0.4,
+        userProfileText: "称呼:阿星 | 累计消息:10 | 互动层级:中互动",
+        relationshipText: "当前互动亲和度:偏低",
+        groupTopicText: "TypeScript",
+        groupActivityText: "高活跃（近10分钟消息40条）",
+      },
+    });
+
+    assert.equal(persona.style.includes("先接住情绪"), true);
+    assert.equal(persona.style.includes("礼貌克制"), true);
+    assert.equal(persona.replyLength, "short");
+    assert.equal(persona.slang.includes("笑死"), false);
   });
 
   await runTest("chat context pipeline applies transform then convert", async () => {
