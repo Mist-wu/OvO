@@ -155,6 +155,13 @@ export const config = {
     ),
     proactiveMinRecentMessages: numberFromEnv(process.env.CHAT_PROACTIVE_MIN_RECENT_MESSAGES, 6),
     proactiveMaxPerTick: numberFromEnv(process.env.CHAT_PROACTIVE_MAX_PER_TICK, 1),
+    stateUserTtlMs: numberFromEnv(process.env.CHAT_STATE_USER_TTL_MS, 24 * 60 * 60 * 1000),
+    stateGroupTtlMs: numberFromEnv(process.env.CHAT_STATE_GROUP_TTL_MS, 24 * 60 * 60 * 1000),
+    stateSessionTtlMs: numberFromEnv(process.env.CHAT_STATE_SESSION_TTL_MS, 6 * 60 * 60 * 1000),
+    stateUserMax: numberFromEnv(process.env.CHAT_STATE_USER_MAX, 2000),
+    stateGroupMax: numberFromEnv(process.env.CHAT_STATE_GROUP_MAX, 300),
+    stateSessionMax: numberFromEnv(process.env.CHAT_STATE_SESSION_MAX, 3000),
+    statePruneIntervalMs: numberFromEnv(process.env.CHAT_STATE_PRUNE_INTERVAL_MS, 60 * 1000),
   },
   llm: {
     gemini: {

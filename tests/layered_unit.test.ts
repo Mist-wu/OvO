@@ -800,6 +800,80 @@ async function main() {
     assert.equal(hints.topicRelevanceBoost >= 0, true);
   });
 
+  await runTest("chat state engine prunes stale runtime state by ttl", async () => {
+    const base = Date.now();
+    const engine = new ChatStateEngine({
+      userTtlMs: 30,
+      groupTtlMs: 30,
+      sessionTtlMs: 30,
+      userMax: 100,
+      groupMax: 100,
+      sessionMax: 100,
+      pruneIntervalMs: 1,
+    });
+
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 9001,
+      userId: 5001,
+      text: "早期消息",
+      eventTimeMs: base,
+    });
+
+    await delay(40);
+
+    engine.recordIncoming({
+      scope: "private",
+      userId: 5002,
+      text: "新消息",
+      eventTimeMs: Date.now(),
+    });
+
+    const stats = engine.getRuntimeStats();
+    assert.equal(stats.users, 1);
+    assert.equal(stats.groups, 0);
+    assert.equal(stats.sessions, 1);
+  });
+
+  await runTest("chat state engine caps runtime state size", async () => {
+    const base = Date.now();
+    const engine = new ChatStateEngine({
+      userTtlMs: 60 * 60 * 1000,
+      groupTtlMs: 60 * 60 * 1000,
+      sessionTtlMs: 60 * 60 * 1000,
+      userMax: 2,
+      groupMax: 1,
+      sessionMax: 2,
+      pruneIntervalMs: 1,
+    });
+
+    engine.recordIncoming({
+      scope: "private",
+      userId: 6001,
+      text: "u1",
+      eventTimeMs: base + 1,
+    });
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 9101,
+      userId: 6002,
+      text: "u2-g1",
+      eventTimeMs: base + 2,
+    });
+    engine.recordIncoming({
+      scope: "group",
+      groupId: 9102,
+      userId: 6003,
+      text: "u3-g2",
+      eventTimeMs: base + 3,
+    });
+
+    const stats = engine.getRuntimeStats();
+    assert.equal(stats.users, 2);
+    assert.equal(stats.groups, 1);
+    assert.equal(stats.sessions, 2);
+  });
+
   await runTest("proactive scheduler selects cold-start and topic continuation", async () => {
     const now = Date.now();
     const candidates = decideProactiveActions({

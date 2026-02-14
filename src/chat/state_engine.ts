@@ -1,4 +1,5 @@
-import { clamp, normalizeText } from "../utils/helpers";
+import { config } from "../config";
+import { clamp, normalizePositiveInt, normalizeText } from "../utils/helpers";
 import { createSessionKey } from "./session_store";
 import {
   EMOTION_RULES,
@@ -33,6 +34,23 @@ export type GroupStateSnapshot = {
   participantCountRecent: number;
   lastMessageAt: number;
   lastProactiveAt: number;
+};
+
+export type ChatStateEngineRuntimeStats = {
+  users: number;
+  groups: number;
+  sessions: number;
+  lastPruneAt: number;
+};
+
+type ChatStateEngineOptions = {
+  userTtlMs: number;
+  groupTtlMs: number;
+  sessionTtlMs: number;
+  userMax: number;
+  groupMax: number;
+  sessionMax: number;
+  pruneIntervalMs: number;
 };
 
 type UserLiveState = {
@@ -74,6 +92,16 @@ type SessionLiveState = {
 const RECENT_WINDOW_MS = 10 * 60 * 1000;
 const MAX_GROUP_SAMPLES = 80;
 const MAX_USER_KEYWORDS = 40;
+
+const DEFAULT_ENGINE_OPTIONS: ChatStateEngineOptions = {
+  userTtlMs: config.chat.stateUserTtlMs,
+  groupTtlMs: config.chat.stateGroupTtlMs,
+  sessionTtlMs: config.chat.stateSessionTtlMs,
+  userMax: config.chat.stateUserMax,
+  groupMax: config.chat.stateGroupMax,
+  sessionMax: config.chat.stateSessionMax,
+  pruneIntervalMs: config.chat.statePruneIntervalMs,
+};
 
 
 
@@ -179,9 +207,34 @@ export class ChatStateEngine {
   private users = new Map<number, UserLiveState>();
   private groups = new Map<number, GroupLiveState>();
   private sessions = new Map<string, SessionLiveState>();
+  private lastPruneAt = 0;
+  private readonly options: ChatStateEngineOptions;
+
+  constructor(options?: Partial<ChatStateEngineOptions>) {
+    const merged = {
+      ...DEFAULT_ENGINE_OPTIONS,
+      ...options,
+    };
+    this.options = {
+      userTtlMs: normalizePositiveInt(merged.userTtlMs, DEFAULT_ENGINE_OPTIONS.userTtlMs),
+      groupTtlMs: normalizePositiveInt(merged.groupTtlMs, DEFAULT_ENGINE_OPTIONS.groupTtlMs),
+      sessionTtlMs: normalizePositiveInt(merged.sessionTtlMs, DEFAULT_ENGINE_OPTIONS.sessionTtlMs),
+      userMax: normalizePositiveInt(merged.userMax, DEFAULT_ENGINE_OPTIONS.userMax),
+      groupMax: normalizePositiveInt(merged.groupMax, DEFAULT_ENGINE_OPTIONS.groupMax),
+      sessionMax: normalizePositiveInt(merged.sessionMax, DEFAULT_ENGINE_OPTIONS.sessionMax),
+      pruneIntervalMs: normalizePositiveInt(
+        merged.pruneIntervalMs,
+        DEFAULT_ENGINE_OPTIONS.pruneIntervalMs,
+      ),
+    };
+  }
 
   recordIncoming(event: ChatEvent): void {
-    const now = event.eventTimeMs && Number.isFinite(event.eventTimeMs) ? event.eventTimeMs : Date.now();
+    const now = Date.now();
+    this.maybePrune(now);
+
+    const eventTimeMs =
+      event.eventTimeMs && Number.isFinite(event.eventTimeMs) ? event.eventTimeMs : now;
     const text = normalizeText(event.text);
     const keywords = tokenizeTopic(text);
     const emotion = inferEmotion(text);
@@ -195,12 +248,12 @@ export class ChatStateEngine {
       repliedMessages: 0,
       emotionLabel: "neutral",
       emotionScore: 0,
-      lastSeenAt: now,
+      lastSeenAt: eventTimeMs,
       keywordWeights: new Map<string, number>(),
     };
     user.displayName = event.senderName?.trim() || user.displayName;
     user.totalMessages += 1;
-    user.lastSeenAt = now;
+    user.lastSeenAt = eventTimeMs;
     user.emotionLabel = mergedEmotion.label;
     user.emotionScore = mergedEmotion.score;
     if (keywords.length > 0) {
@@ -215,12 +268,12 @@ export class ChatStateEngine {
     const sessionKey = createSessionKey(event);
     const session = this.sessions.get(sessionKey) ?? {
       sessionKey,
-      lastUpdatedAt: now,
+      lastUpdatedAt: eventTimeMs,
       turns: 0,
       lastUserText: "",
       lastReplyText: "",
     };
-    session.lastUpdatedAt = now;
+    session.lastUpdatedAt = eventTimeMs;
     session.turns += 1;
     session.lastUserText = text;
     this.sessions.set(sessionKey, session);
@@ -232,34 +285,37 @@ export class ChatStateEngine {
     const previousGroup = this.groups.get(event.groupId);
     const group: GroupLiveState = previousGroup ?? {
       groupId: event.groupId,
-      lastMessageAt: now,
+      lastMessageAt: eventTimeMs,
       totalMessages: 0,
       recentMessages: [],
       topic: "暂无稳定话题",
       topicKeywords: [],
       lastProactiveAt: 0,
     };
-    group.lastMessageAt = now;
+    group.lastMessageAt = eventTimeMs;
     group.totalMessages += 1;
     if (text) {
       group.recentMessages.push({
         userId: event.userId,
         text,
-        ts: now,
+        ts: eventTimeMs,
         keywords,
       });
-      group.recentMessages = toRecentWindow(group.recentMessages, now).slice(-MAX_GROUP_SAMPLES);
+      group.recentMessages = toRecentWindow(group.recentMessages, eventTimeMs).slice(-MAX_GROUP_SAMPLES);
       const nextTopic = buildTopic(group.recentMessages);
       group.topic = nextTopic.topic;
       group.topicKeywords = nextTopic.keywords;
     } else {
-      group.recentMessages = toRecentWindow(group.recentMessages, now);
+      group.recentMessages = toRecentWindow(group.recentMessages, eventTimeMs);
     }
     this.groups.set(event.groupId, group);
+    this.enforceCapacity();
   }
 
   recordReply(event: ChatEvent, replyText: string): void {
     const now = Date.now();
+    this.maybePrune(now);
+
     const user = this.users.get(event.userId);
     if (user) {
       user.repliedMessages += 1;
@@ -276,6 +332,8 @@ export class ChatStateEngine {
   }
 
   getPromptState(event: ChatEvent): PromptStateContext {
+    this.maybePrune(Date.now());
+
     const user = this.users.get(event.userId);
     const group = event.scope === "group" && typeof event.groupId === "number" ? this.groups.get(event.groupId) : undefined;
     const affinity = describeAffinity(user?.totalMessages ?? 0, user?.repliedMessages ?? 0);
@@ -312,6 +370,8 @@ export class ChatStateEngine {
   }
 
   getTriggerHints(event: ChatEvent): TriggerRuntimeHints {
+    this.maybePrune(Date.now());
+
     const user = this.users.get(event.userId);
     const userAffinity = describeAffinity(user?.totalMessages ?? 0, user?.repliedMessages ?? 0).score;
 
@@ -348,6 +408,8 @@ export class ChatStateEngine {
   }
 
   listGroupSnapshots(now = Date.now()): GroupStateSnapshot[] {
+    this.maybePrune(now);
+
     return Array.from(this.groups.values()).map((group) => {
       const recentMessages = toRecentWindow(group.recentMessages, now);
       return {
@@ -367,6 +429,78 @@ export class ChatStateEngine {
     if (!group) return;
     group.lastProactiveAt = now;
     this.groups.set(groupId, group);
+  }
+
+  getRuntimeStats(): ChatStateEngineRuntimeStats {
+    return {
+      users: this.users.size,
+      groups: this.groups.size,
+      sessions: this.sessions.size,
+      lastPruneAt: this.lastPruneAt,
+    };
+  }
+
+  private maybePrune(now: number): void {
+    if (this.lastPruneAt > 0 && now - this.lastPruneAt < this.options.pruneIntervalMs) {
+      return;
+    }
+
+    this.pruneUsers(now);
+    this.pruneGroups(now);
+    this.pruneSessions(now);
+    this.lastPruneAt = now;
+  }
+
+  private enforceCapacity(): void {
+    this.evictOverflow(this.users, this.options.userMax, (user) => user.lastSeenAt);
+    this.evictOverflow(this.groups, this.options.groupMax, (group) => group.lastMessageAt);
+    this.evictOverflow(this.sessions, this.options.sessionMax, (session) => session.lastUpdatedAt);
+  }
+
+  private pruneUsers(now: number): void {
+    for (const [userId, user] of this.users.entries()) {
+      if (now - user.lastSeenAt > this.options.userTtlMs) {
+        this.users.delete(userId);
+      }
+    }
+    this.evictOverflow(this.users, this.options.userMax, (user) => user.lastSeenAt);
+  }
+
+  private pruneGroups(now: number): void {
+    for (const [groupId, group] of this.groups.entries()) {
+      if (now - group.lastMessageAt > this.options.groupTtlMs) {
+        this.groups.delete(groupId);
+      }
+    }
+    this.evictOverflow(this.groups, this.options.groupMax, (group) => group.lastMessageAt);
+  }
+
+  private pruneSessions(now: number): void {
+    for (const [sessionKey, session] of this.sessions.entries()) {
+      if (now - session.lastUpdatedAt > this.options.sessionTtlMs) {
+        this.sessions.delete(sessionKey);
+      }
+    }
+    this.evictOverflow(this.sessions, this.options.sessionMax, (session) => session.lastUpdatedAt);
+  }
+
+  private evictOverflow<TKey, TValue>(
+    target: Map<TKey, TValue>,
+    maxSize: number,
+    getTimestamp: (value: TValue) => number,
+  ): void {
+    const overflow = target.size - maxSize;
+    if (overflow <= 0) return;
+
+    const sorted = Array.from(target.entries()).sort((left, right) => {
+      return getTimestamp(left[1]) - getTimestamp(right[1]);
+    });
+
+    for (let index = 0; index < overflow; index += 1) {
+      const item = sorted[index];
+      if (!item) break;
+      target.delete(item[0]);
+    }
   }
 }
 

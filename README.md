@@ -143,6 +143,13 @@
 - `CHAT_PROACTIVE_BUBBLE_INTERVAL_MS`：定时冒泡间隔
 - `CHAT_PROACTIVE_MIN_RECENT_MESSAGES`：话题续接最小近窗消息数
 - `CHAT_PROACTIVE_MAX_PER_TICK`：每个调度周期最多主动发言群数
+- `CHAT_STATE_USER_TTL_MS`：用户实时状态过期时间
+- `CHAT_STATE_GROUP_TTL_MS`：群实时状态过期时间
+- `CHAT_STATE_SESSION_TTL_MS`：会话实时状态过期时间
+- `CHAT_STATE_USER_MAX`：最多保留用户状态数
+- `CHAT_STATE_GROUP_MAX`：最多保留群状态数
+- `CHAT_STATE_SESSION_MAX`：最多保留会话状态数
+- `CHAT_STATE_PRUNE_INTERVAL_MS`：状态清理最小间隔
 
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
