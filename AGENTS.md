@@ -39,6 +39,13 @@
   - `@bot` / `reply` / alias as must-reply
   - Group willingness scoring + priority (`must/high/normal/low`)
   - Delayed reply with cancel-on-followup (wait user to finish)
+- Lightweight Action Planner V1 ready:
+  - Planned actions: `no_reply` / `tool_direct` / `tool_context` / `llm`
+  - Auto quote decision for group replies (uses OneBot `reply` segment)
+  - Style variant routing (`default/warm/playful/concise`) + lite/full memory mode
+- Reply Humanization V1 ready:
+  - Post-process chain for punctuation cleanup + AI meta stripping
+  - Optional sentence split + low-probability typo injection (configurable)
 - Proactive group speaking V2 ready:
   - cold-start breaker（冷场破冰）
   - topic continuation（话题续接）
@@ -51,7 +58,7 @@
 - Chat State Engine V1 ready:
   - Runtime user/group/session state with TTL + capacity prune
   - Emotion/user-affinity/group-topic context for prompt
-  - Trigger hints for willingness decision (`userAffinity/topicRelevance/groupHeat`)
+  - Trigger hints for willingness decision (`userAffinity/topicRelevance/groupHeat/silenceCompensation`)
 - Skills runtime V1 ready:
   - Skill Loader + Registry + Executor
   - `SKILL.md` metadata (`capability`, `mode`) wired into chat tool routing
@@ -64,7 +71,7 @@
 - `package.json`, `tsconfig.json`, `.env.example`
 - `src/index.ts` (entry)
 - `src/config.ts` (env config)
-- `src/chat/` (orchestrator, trigger, agent loop, proactive scheduler, state engine, media parser, memory, session store, safety, tool router)
+- `src/chat/` (orchestrator, action planner, trigger, agent loop, proactive scheduler, state engine, media parser, memory, session store, safety/humanize, tool router)
 - `src/napcat/client.ts` (WS client + actions)
 - `src/napcat/handlers.ts` (event handling)
 - `src/napcat/commands/` (registry, middleware, root/user definitions)
@@ -131,6 +138,10 @@
     - `CHAT_STATE_USER_TTL_MS`, `CHAT_STATE_GROUP_TTL_MS`, `CHAT_STATE_SESSION_TTL_MS`
     - `CHAT_STATE_USER_MAX`, `CHAT_STATE_GROUP_MAX`, `CHAT_STATE_SESSION_MAX`
     - `CHAT_STATE_PRUNE_INTERVAL_MS`
+    - `CHAT_QUOTE_MODE` (`auto` / `on` / `off`)
+    - `CHAT_STYLE_VARIANT_ENABLED`, `CHAT_STYLE_SWITCH_PROB`
+    - `CHAT_HUMANIZE_ENABLED`, `CHAT_HUMANIZE_TYPO_PROB`, `CHAT_HUMANIZE_SPLIT_PROB`
+    - `CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED`, `CHAT_TRIGGER_SILENCE_COMPENSATION_MAX`
   - Gemini SDK:
     - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
     - `GEMINI_RETRIES`, `GEMINI_RETRY_DELAY_MS`, `GEMINI_CONCURRENCY`, `GEMINI_DEGRADE_ON_FAILURE`
@@ -173,6 +184,6 @@
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
 
 ## Next steps
-- Add lightweight action-planner layer (`reply/no_reply/wait/tool`) for finer behavior control
+- Extend planner with explicit `wait/complete_talk` actions and tool retry policy hints
 - Expand skill capabilities with `news` and improve skill-level source formatting
 - Add dynamic emotion/persona adaptation on top of current state engine

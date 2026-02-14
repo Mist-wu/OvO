@@ -115,10 +115,17 @@
   - `@bot` / `reply` / 别名：必回
   - 普通群消息：基于意愿评分择机回复
   - 非必回场景：短延迟并可被同会话新消息覆盖（等用户说完）
+- Action Planner（V1）：
+  - 每轮先规划 `no_reply / tool_direct / tool_context / llm`
+  - 群聊自动决策是否使用 `reply` 消息段做引用回复
+  - 支持风格变体与记忆注入分级（lite/full）
 - 状态引擎（V1）：
   - 维护用户/群/会话实时状态（TTL + 容量裁剪）
-  - 为触发器提供 `userAffinity/topicRelevance/groupHeat` 提示
+  - 为触发器提供 `userAffinity/topicRelevance/groupHeat/silenceCompensation` 提示
   - 为提示词注入情绪、互动关系、群话题与活跃度信息
+- 拟人化后处理（V1）：
+  - 回复后做标点与格式清理，去除 AI 套话痕迹
+  - 可选轻量分句与低概率错字扰动，降低“机器腔”
 - 主动发言（V2）：
   - 冷场破冰：群聊冷却后自动轻量开场
   - 话题续接：有主话题时按空窗续接
@@ -160,6 +167,14 @@
 - `CHAT_STATE_GROUP_MAX`：最多保留群状态数
 - `CHAT_STATE_SESSION_MAX`：最多保留会话状态数
 - `CHAT_STATE_PRUNE_INTERVAL_MS`：状态清理最小间隔
+- `CHAT_QUOTE_MODE`：引用回复策略（`auto` / `on` / `off`）
+- `CHAT_STYLE_VARIANT_ENABLED`：是否启用风格变体路由
+- `CHAT_STYLE_SWITCH_PROB`：风格切换概率（0~1）
+- `CHAT_HUMANIZE_ENABLED`：是否启用拟人化后处理
+- `CHAT_HUMANIZE_TYPO_PROB`：轻微错字概率（0~1）
+- `CHAT_HUMANIZE_SPLIT_PROB`：长句分句概率（0~1）
+- `CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED`：是否启用沉默补偿
+- `CHAT_TRIGGER_SILENCE_COMPENSATION_MAX`：沉默补偿上限
 
 ## 测试与构建
 - `pnpm run test:unit`：分层单测（事件守卫、命令访问级别、外部调用治理）
