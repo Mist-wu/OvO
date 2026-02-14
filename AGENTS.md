@@ -128,6 +128,15 @@
     - `mode` supports `direct` / `context`
   - External call governance:
     - `EXTERNAL_CIRCUIT_BREAKER_ENABLED`, `EXTERNAL_CIRCUIT_FAILURE_THRESHOLD`, `EXTERNAL_CIRCUIT_OPEN_MS`
+  - Logging:
+    - `LOG_LEVEL` — 全局日志最低级别（`debug` | `info` | `warn` | `error` | `silent`，默认 `info`）
+      - 控制 `src/utils/logger.ts` 输出的所有日志
+      - 低于此级别的日志调用会被静默丢弃
+    - `NAPCAT_ACTION_LOG_ENABLED` — 是否输出 NapCat action 日志（默认 `true`）
+    - `NAPCAT_ACTION_LOG_LEVEL` — NapCat action 日志级别（`debug` | `info` | `warn` | `error`，默认 `info`）
+      - **独立于 `LOG_LEVEL`**：action 日志由 `logAction()` 自行按此级别过滤后，
+        通过 `logger.emitRaw()` 直接输出，不受 `LOG_LEVEL` 二次截断
+      - 例：`LOG_LEVEL=warn` + `NAPCAT_ACTION_LOG_LEVEL=debug` → action debug 日志**仍然会输出**
 
 ## Run
 1. `pnpm install`

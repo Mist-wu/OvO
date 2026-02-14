@@ -360,7 +360,7 @@ async function main() {
           },
         };
       },
-      commit() {},
+      commit() { },
       async handle() {
         return null;
       },
@@ -448,7 +448,7 @@ async function main() {
           },
         };
       },
-      commit() {},
+      commit() { },
       async handle() {
         return null;
       },
@@ -1190,6 +1190,71 @@ async function main() {
       assert.equal(context.archivedSummaries.length >= 1, true);
     } finally {
       Object.assign(config.chat, previous);
+    }
+  });
+
+  await runTest("logger.emitRaw bypasses global LOG_LEVEL gate", async () => {
+    // 动态导入 logger 以操作它的单例
+    const { logger } = await import("../src/utils/logger");
+    const originalLevel = logger.getLevel();
+    const captured: Array<{ level: string; args: unknown[] }> = [];
+
+    // 安装 spy transport
+    logger.setTransport((level, _ts, args) => {
+      captured.push({ level, args });
+    });
+
+    try {
+      // 全局设为 warn —— 普通 info 应被过滤
+      logger.setLevel("warn");
+      logger.info("should_be_filtered");
+      assert.equal(
+        captured.some((item) => item.args.includes("should_be_filtered")),
+        false,
+        "logger.info should be filtered when level=warn",
+      );
+
+      // emitRaw 应绕过全局门控
+      logger.emitRaw("info", "should_pass_through");
+      assert.equal(
+        captured.some((item) => item.args.includes("should_pass_through")),
+        true,
+        "logger.emitRaw should bypass global LOG_LEVEL gate",
+      );
+
+      // emitRaw("debug") 也应输出
+      logger.emitRaw("debug", "debug_raw");
+      assert.equal(
+        captured.some((item) => item.level === "debug" && item.args.includes("debug_raw")),
+        true,
+        "logger.emitRaw('debug') should output even when level=warn",
+      );
+
+      // emitRaw("silent") 应被丢弃
+      const countBefore = captured.length;
+      logger.emitRaw("silent", "silent_msg");
+      assert.equal(captured.length, countBefore, "emitRaw('silent') should discard");
+    } finally {
+      // 恢复原状
+      logger.setLevel(originalLevel);
+      // 恢复默认 transport（console）—— 直接重设为 console transport
+      logger.setTransport((level, timestamp, args) => {
+        const prefix = `${timestamp} [${level.toUpperCase()}]`;
+        switch (level) {
+          case "debug":
+            console.debug(prefix, ...args);
+            break;
+          case "info":
+            console.info(prefix, ...args);
+            break;
+          case "warn":
+            console.warn(prefix, ...args);
+            break;
+          case "error":
+            console.error(prefix, ...args);
+            break;
+        }
+      });
     }
   });
 }
