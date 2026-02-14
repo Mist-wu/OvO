@@ -5,6 +5,7 @@
 
 ## 开发定位与原则
 - 本项目定位为个人开发/个人使用，不按企业级多团队流程设计。
+- 总目标是个人使用的 QQ 聊天机器人，采用 AI 辅助开发；不强求低耦合，优先保证 AI 易于开发与改动，代码模块保持清晰、简洁、易读，注释尽量少写且只在必要处补充。
 - 安全策略保持简明：优先使用环境变量管理 token、最小必要权限、失败可追踪日志；不引入复杂 RBAC、审计平台或重型密钥体系。
 - 测试策略保持简明：优先覆盖核心链路与高风险改动，默认使用 `pnpm run test:mock`，必要时补 `pnpm run build`；避免过度复杂的测试基础设施。
 - 新增功能时先保证可运行与可维护，再逐步增强，不为了“完整性”提前引入复杂机制。
@@ -38,15 +39,23 @@
   - `@bot` / `reply` / alias as must-reply
   - Group willingness scoring + priority (`must/high/normal/low`)
   - Delayed reply with cancel-on-followup (wait user to finish)
+- Proactive group speaking V2 ready:
+  - cold-start breaker（冷场破冰）
+  - topic continuation（话题续接）
+  - timed bubbling（定时冒泡）
 - Chat Memory V1 ready:
   - Persistent long-term memory store (`data/chat_memory.json`)
   - Automatic fact extraction (identity/preference/relationship/meme)
   - Session summary archive for earlier turns (reduce prompt cost)
   - Prompt now includes long-term facts + archived summaries
+- Chat State Engine V1 ready:
+  - Runtime user/group/session state with TTL + capacity prune
+  - Emotion/user-affinity/group-topic context for prompt
+  - Trigger hints for willingness decision (`userAffinity/topicRelevance/groupHeat`)
 - Skills runtime V1 ready:
   - Skill Loader + Registry + Executor
   - `SKILL.md` metadata (`capability`, `mode`) wired into chat tool routing
-  - Built-in capabilities: `weather` (direct), `search` (context)
+  - Built-in capabilities: `weather` (direct), `search` (context), `time` (direct), `fx` (direct), `calc` (direct)
 - Mock NapCat WebSocket test suite in `tests/mock_napcat.test.ts`
 - Layered unit test suite in `tests/layered_unit.test.ts`
 - Message segment builder (`text`/`at`/`reply`/`image`/`face`) + unified send helper
@@ -55,7 +64,7 @@
 - `package.json`, `tsconfig.json`, `.env.example`
 - `src/index.ts` (entry)
 - `src/config.ts` (env config)
-- `src/chat/` (chat orchestrator, trigger, media parser, session store, safety)
+- `src/chat/` (orchestrator, trigger, agent loop, proactive scheduler, state engine, media parser, memory, session store, safety, tool router)
 - `src/napcat/client.ts` (WS client + actions)
 - `src/napcat/handlers.ts` (event handling)
 - `src/napcat/commands/` (registry, middleware, root/user definitions)
@@ -116,12 +125,24 @@
     - `CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES`
     - `CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES`
     - `CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION`
+    - `CHAT_PROACTIVE_ENABLED`, `CHAT_PROACTIVE_IDLE_MS`, `CHAT_PROACTIVE_CONTINUE_IDLE_MS`
+    - `CHAT_PROACTIVE_MIN_GAP_MS`, `CHAT_PROACTIVE_BUBBLE_INTERVAL_MS`
+    - `CHAT_PROACTIVE_MIN_RECENT_MESSAGES`, `CHAT_PROACTIVE_MAX_PER_TICK`
+    - `CHAT_STATE_USER_TTL_MS`, `CHAT_STATE_GROUP_TTL_MS`, `CHAT_STATE_SESSION_TTL_MS`
+    - `CHAT_STATE_USER_MAX`, `CHAT_STATE_GROUP_MAX`, `CHAT_STATE_SESSION_MAX`
+    - `CHAT_STATE_PRUNE_INTERVAL_MS`
   - Gemini SDK:
     - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
     - `GEMINI_RETRIES`, `GEMINI_RETRY_DELAY_MS`, `GEMINI_CONCURRENCY`, `GEMINI_DEGRADE_ON_FAILURE`
   - Weather:
     - `WEATHER_API_KEY`, `WEATHER_TIMEOUT_MS`
     - `WEATHER_RETRIES`, `WEATHER_RETRY_DELAY_MS`, `WEATHER_CONCURRENCY`, `WEATHER_DEGRADE_ON_FAILURE`
+  - Search:
+    - `SEARCH_TIMEOUT_MS`, `SEARCH_MAX_RESULTS`
+    - `SEARCH_RETRIES`, `SEARCH_RETRY_DELAY_MS`, `SEARCH_CONCURRENCY`, `SEARCH_DEGRADE_ON_FAILURE`
+  - FX:
+    - `FX_TIMEOUT_MS`
+    - `FX_RETRIES`, `FX_RETRY_DELAY_MS`, `FX_CONCURRENCY`, `FX_DEGRADE_ON_FAILURE`
   - Skills:
     - Place skill metadata at `src/skills/<name>/SKILL.md`
     - `capability` is used for runtime routing (e.g. `weather`, `search`)
@@ -152,6 +173,6 @@
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
 
 ## Next steps
-- Add proactive group speaking strategy (cold-start breaker + timed bubbling + topic continuation)
-- Expand skill capabilities (time/calc/news/FX) and skill-level source formatting
-- Add dynamic emotion + persona adaptation on top of current scheduler
+- Add lightweight action-planner layer (`reply/no_reply/wait/tool`) for finer behavior control
+- Expand skill capabilities with `news` and improve skill-level source formatting
+- Add dynamic emotion/persona adaptation on top of current state engine
