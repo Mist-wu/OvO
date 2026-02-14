@@ -22,6 +22,28 @@ function booleanFromEnv(value: string | undefined, fallback = false): boolean {
   return fallback;
 }
 
+export type ExternalServiceConfig = {
+  retries: number;
+  retryDelayMs: number;
+  concurrency: number;
+  degradeOnFailure: boolean;
+};
+
+function externalServiceConfig(
+  envPrefix: string,
+  defaults: ExternalServiceConfig,
+): ExternalServiceConfig {
+  return {
+    retries: numberFromEnv(process.env[`${envPrefix}_RETRIES`], defaults.retries),
+    retryDelayMs: numberFromEnv(process.env[`${envPrefix}_RETRY_DELAY_MS`], defaults.retryDelayMs),
+    concurrency: numberFromEnv(process.env[`${envPrefix}_CONCURRENCY`], defaults.concurrency),
+    degradeOnFailure: booleanFromEnv(
+      process.env[`${envPrefix}_DEGRADE_ON_FAILURE`],
+      defaults.degradeOnFailure,
+    ),
+  };
+}
+
 function actionLogLevelFromEnv(
   value: string | undefined,
   fallback: ActionLogLevel = "info",
@@ -157,29 +179,29 @@ export const config = {
     circuitBreakerEnabled: booleanFromEnv(process.env.EXTERNAL_CIRCUIT_BREAKER_ENABLED, true),
     circuitFailureThreshold: numberFromEnv(process.env.EXTERNAL_CIRCUIT_FAILURE_THRESHOLD, 3),
     circuitOpenMs: numberFromEnv(process.env.EXTERNAL_CIRCUIT_OPEN_MS, 30000),
-    gemini: {
-      retries: numberFromEnv(process.env.GEMINI_RETRIES, 1),
-      retryDelayMs: numberFromEnv(process.env.GEMINI_RETRY_DELAY_MS, 200),
-      concurrency: numberFromEnv(process.env.GEMINI_CONCURRENCY, 2),
-      degradeOnFailure: booleanFromEnv(process.env.GEMINI_DEGRADE_ON_FAILURE, true),
-    },
-    weather: {
-      retries: numberFromEnv(process.env.WEATHER_RETRIES, 1),
-      retryDelayMs: numberFromEnv(process.env.WEATHER_RETRY_DELAY_MS, 150),
-      concurrency: numberFromEnv(process.env.WEATHER_CONCURRENCY, 4),
-      degradeOnFailure: booleanFromEnv(process.env.WEATHER_DEGRADE_ON_FAILURE, true),
-    },
-    search: {
-      retries: numberFromEnv(process.env.SEARCH_RETRIES, 1),
-      retryDelayMs: numberFromEnv(process.env.SEARCH_RETRY_DELAY_MS, 150),
-      concurrency: numberFromEnv(process.env.SEARCH_CONCURRENCY, 3),
-      degradeOnFailure: booleanFromEnv(process.env.SEARCH_DEGRADE_ON_FAILURE, true),
-    },
-    fx: {
-      retries: numberFromEnv(process.env.FX_RETRIES, 1),
-      retryDelayMs: numberFromEnv(process.env.FX_RETRY_DELAY_MS, 120),
-      concurrency: numberFromEnv(process.env.FX_CONCURRENCY, 2),
-      degradeOnFailure: booleanFromEnv(process.env.FX_DEGRADE_ON_FAILURE, true),
-    },
+    gemini: externalServiceConfig("GEMINI", {
+      retries: 1,
+      retryDelayMs: 200,
+      concurrency: 2,
+      degradeOnFailure: true,
+    }),
+    weather: externalServiceConfig("WEATHER", {
+      retries: 1,
+      retryDelayMs: 150,
+      concurrency: 4,
+      degradeOnFailure: true,
+    }),
+    search: externalServiceConfig("SEARCH", {
+      retries: 1,
+      retryDelayMs: 150,
+      concurrency: 3,
+      degradeOnFailure: true,
+    }),
+    fx: externalServiceConfig("FX", {
+      retries: 1,
+      retryDelayMs: 120,
+      concurrency: 2,
+      degradeOnFailure: true,
+    }),
   },
 };

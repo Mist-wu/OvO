@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { normalizePositiveInt, normalizeText } from "../utils/helpers";
+import { logger } from "../utils/logger";
+
 export type MemoryFactCategory = "identity" | "preference" | "relationship" | "meme" | "other";
 
 export type MemoryFact = {
@@ -33,11 +36,7 @@ type StoredChatMemoryV1 = {
 
 const CURRENT_VERSION = 1;
 
-function normalizePositiveInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized > 0 ? normalized : fallback;
-}
+
 
 function normalizeFact(raw: unknown): MemoryFact | null {
   if (!raw || typeof raw !== "object") return null;
@@ -48,10 +47,10 @@ function normalizeFact(raw: unknown): MemoryFact | null {
   const category = parsed.category;
   const normalizedCategory: MemoryFactCategory =
     category === "identity" ||
-    category === "preference" ||
-    category === "relationship" ||
-    category === "meme" ||
-    category === "other"
+      category === "preference" ||
+      category === "relationship" ||
+      category === "meme" ||
+      category === "other"
       ? category
       : "other";
 
@@ -148,9 +147,7 @@ function normalizeStore(raw: unknown): StoredChatMemoryV1 {
   };
 }
 
-function normalizeText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
+
 
 export class ChatMemoryStore {
   private data: StoredChatMemoryV1 = {
@@ -303,7 +300,7 @@ export class ChatMemoryStore {
         this.persist();
       }
     } catch (error) {
-      console.warn("[chat_memory_store] 读取失败，已重置:", error);
+      logger.warn("[chat_memory_store] 读取失败，已重置:", error);
       this.data = { version: CURRENT_VERSION, users: {}, sessions: {} };
       this.persist();
     }

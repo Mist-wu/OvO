@@ -3,6 +3,13 @@ type ExternalCallContext = {
   attempt: number;
 };
 
+import {
+  isAbortError,
+  normalizeError,
+  normalizePositiveInt,
+} from "./helpers";
+import { logger } from "./logger";
+
 type RetryDecider = (error: Error) => boolean;
 
 type ExternalCallErrorReason = "call_failed" | "circuit_open";
@@ -60,7 +67,7 @@ class ConcurrencyGate {
   private active = 0;
   private readonly queue: Array<() => void> = [];
 
-  constructor(private readonly limit: number) {}
+  constructor(private readonly limit: number) { }
 
   async acquire(): Promise<void> {
     if (this.active < this.limit) {
@@ -107,16 +114,7 @@ function getCircuitState(key: string): CircuitState {
   return next;
 }
 
-function normalizeError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  return new Error(String(error));
-}
 
-function normalizePositiveInt(value: number | undefined, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized > 0 ? normalized : fallback;
-}
 
 function isRetryableByDefault(error: Error): boolean {
   const message = `${error.name} ${error.message}`.toLowerCase();
@@ -133,11 +131,7 @@ function isRetryableByDefault(error: Error): boolean {
   return false;
 }
 
-function isAbortError(error: Error): boolean {
-  if (error.name === "AbortError") return true;
-  const message = `${error.name} ${error.message}`.toLowerCase();
-  return message.includes("abort");
-}
+
 
 function createAbortError(service: string, operation: string): Error {
   const error = new Error(
@@ -199,7 +193,7 @@ async function resolveFallbackOrThrow<T>(
 ): Promise<T> {
   if (!fallback) throw error;
 
-  console.warn(
+  logger.warn(
     `[external] fallback service=${error.service} operation=${error.operation} reason=${error.reason}`,
   );
   return fallback(error);
@@ -331,7 +325,7 @@ export async function runExternalCall<T>(
         }
 
         if (retryable && attempt <= retries) {
-          console.warn(
+          logger.warn(
             `[external] retry service=${options.service} operation=${options.operation} attempt=${attempt} reason=${normalized.message}`,
           );
           if (retryDelayMs > 0) {

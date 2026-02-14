@@ -1,3 +1,4 @@
+import { clipText, normalizeText } from "./helpers";
 import { config } from "../config";
 import { ExternalCallError, runExternalCall } from "./external_call";
 
@@ -21,16 +22,7 @@ export type WebSearchItem = {
   source: string;
 };
 
-function normalizeText(value: string, fallback = ""): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized || fallback;
-}
 
-function clipText(value: string, maxLength: number): string {
-  const normalized = normalizeText(value);
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
-}
 
 function pushItem(
   target: WebSearchItem[],

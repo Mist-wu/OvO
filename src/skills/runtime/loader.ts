@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { logger } from "../../utils/logger";
 import type { LoadedSkill, SkillFrontMatter } from "./types";
 
 function stripQuotes(value: string): string {
@@ -62,7 +63,7 @@ function parseFrontMatter(content: string): SkillFrontMatter | null {
 }
 
 export class SkillLoader {
-  constructor(private readonly skillsRoot: string) {}
+  constructor(private readonly skillsRoot: string) { }
 
   loadAll(): LoadedSkill[] {
     if (!fs.existsSync(this.skillsRoot)) {
@@ -92,7 +93,7 @@ export class SkillLoader {
           frontMatter,
         });
       } catch (error) {
-        console.warn(`[skills] load failed: ${skillPath}`, error);
+        logger.warn(`[skills] load failed: ${skillPath}`, error);
       }
     }
 

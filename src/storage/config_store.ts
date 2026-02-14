@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { logger } from "../utils/logger";
 import { config } from "../config";
 
 export type PersistentConfig = {
@@ -60,7 +61,7 @@ function migrateConfig(raw: unknown, defaults: PersistentConfig): StoredConfigV1
   }
 
   if (typeof version === "number" && version > CURRENT_CONFIG_VERSION) {
-    console.warn(
+    logger.warn(
       `[config_store] 检测到更高配置版本 version=${version}，将按 v${CURRENT_CONFIG_VERSION} 字段兼容读取`,
     );
   }
@@ -128,7 +129,7 @@ export class ConfigStore {
         this.persist();
       }
     } catch (error) {
-      console.warn("[config_store] 配置文件读取失败，已回退默认配置:", error);
+      logger.warn("[config_store] 配置文件读取失败，已回退默认配置:", error);
       this.data = toStoredConfigV1(this.defaults, this.defaults);
       this.persist();
     }
