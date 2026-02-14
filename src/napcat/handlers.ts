@@ -1,3 +1,4 @@
+import { logger } from "../utils/logger";
 import { config } from "../config";
 import { chatAgentLoop } from "../chat";
 import type { ChatEvent } from "../chat/types";
@@ -39,7 +40,7 @@ export async function handleEvent(client: NapcatClient, event: OneBotEvent): Pro
     return;
   }
 
-  console.debug("[event] 未识别 post_type:", event.post_type);
+  logger.debug("[event] 未识别 post_type:", event.post_type);
 }
 
 async function handleMessage(client: NapcatClient, event: MessageEvent): Promise<void> {
@@ -99,7 +100,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
   const { notice_type, sub_type, group_id, user_id } = event;
   if (!notice_type) return;
-  console.info("[notice]", notice_type, sub_type, {
+  logger.info("[notice]", notice_type, sub_type, {
     group_id,
     user_id,
   });
@@ -127,7 +128,7 @@ async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<v
 async function handleRequest(client: NapcatClient, event: RequestEvent): Promise<void> {
   const { request_type, sub_type, user_id, group_id, flag } = event;
   if (!request_type) return;
-  console.info("[request]", request_type, sub_type, {
+  logger.info("[request]", request_type, sub_type, {
     user_id,
     group_id,
   });
@@ -143,10 +144,10 @@ async function handleRequest(client: NapcatClient, event: RequestEvent): Promise
 
 function handleMeta(event: MetaEvent): void {
   if (event.meta_event_type === "heartbeat") {
-    console.debug("[meta] heartbeat");
+    logger.debug("[meta] heartbeat");
     return;
   }
-  console.debug("[meta]", event.meta_event_type);
+  logger.debug("[meta]", event.meta_event_type);
 }
 
 function getMessageText(event: MessageEvent): string {

@@ -1,3 +1,4 @@
+import { logger } from "../../../utils/logger";
 import { fetchWeatherSummary } from "../../../utils/weather";
 import type { CommandDefinition } from "../types";
 
@@ -47,7 +48,7 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
           const report = await fetchWeatherSummary(location);
           await context.sendText(report);
         } catch (error) {
-          console.warn("[weather] 查询失败:", error);
+          logger.warn("[weather] 查询失败:", error);
           const message = error instanceof Error ? error.message : "";
           if (message.includes("WEATHER_API_KEY")) {
             await context.sendText(message);

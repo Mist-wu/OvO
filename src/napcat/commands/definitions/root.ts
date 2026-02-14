@@ -1,3 +1,4 @@
+import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
 import { askGemini } from "../../../llm";
 import { runtimeSkills } from "../../../skills/runtime";
@@ -74,7 +75,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           const answer = await askGemini(prompt);
           await context.sendText(answer);
         } catch (error) {
-          console.warn("[llm] /问 失败:", error);
+          logger.warn("[llm] /问 失败:", error);
           const message = error instanceof Error ? error.message : "";
           if (message.includes("GEMINI_API_KEY")) {
             await context.sendText(message);
@@ -107,11 +108,11 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         const lastPongAgeMs = Math.max(0, Date.now() - runtime.lastPongAt);
         await context.sendText(
           `connected=${runtime.connected} reconnecting=${runtime.reconnecting} ` +
-            `inflight=${runtime.inFlightActions} queued=${runtime.queuedActions} ` +
-            `pending=${runtime.pendingActions} pong_age_ms=${lastPongAgeMs} ` +
-            `queue_overflow_count=${runtime.queueOverflowCount} ` +
-            `retry_count=${runtime.retryCount} ` +
-            `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
+          `inflight=${runtime.inFlightActions} queued=${runtime.queuedActions} ` +
+          `pending=${runtime.pendingActions} pong_age_ms=${lastPongAgeMs} ` +
+          `queue_overflow_count=${runtime.queueOverflowCount} ` +
+          `retry_count=${runtime.retryCount} ` +
+          `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
         );
       },
     }),
@@ -131,10 +132,10 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
             : "(unset)";
         await context.sendText(
           `rootUserId=${rootUserId} cooldownMs=${snapshot.cooldownMs} ` +
-            `groupEnabledDefault=${config.permissions.groupEnabledDefault} ` +
-            `autoApproveGroup=${config.requests.autoApproveGroup} ` +
-            `autoApproveFriend=${config.requests.autoApproveFriend} ` +
-            `skillsLoaded=${skillCount}`,
+          `groupEnabledDefault=${config.permissions.groupEnabledDefault} ` +
+          `autoApproveGroup=${config.requests.autoApproveGroup} ` +
+          `autoApproveFriend=${config.requests.autoApproveFriend} ` +
+          `skillsLoaded=${skillCount}`,
         );
       },
     }),

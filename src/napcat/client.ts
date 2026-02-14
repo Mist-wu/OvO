@@ -1,4 +1,7 @@
 import { randomUUID } from "crypto";
+
+import { normalizeNonNegativeInt, normalizePositiveInt } from "../utils/helpers";
+import { logger } from "../utils/logger";
 import WebSocket from "ws";
 
 import { config } from "../config";
@@ -48,17 +51,7 @@ type RuntimeStatus = {
   rateLimitWaitMsTotal: number;
 };
 
-function normalizePositiveInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized > 0 ? normalized : fallback;
-}
 
-function normalizeNonNegativeInt(value: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-  const normalized = Math.floor(value);
-  return normalized >= 0 ? normalized : fallback;
-}
 
 export function calculateActionRetryDelayMs(
   baseDelayMs: number,
@@ -117,12 +110,12 @@ export class NapcatClient {
       headers.Authorization = `Bearer ${config.napcat.token}`;
     }
 
-    console.log(`正在连接到 NapCatQQ 服务器: ${config.napcat.url}`);
+    logger.info(`正在连接到 NapCatQQ 服务器: ${config.napcat.url}`);
     const ws = new WebSocket(config.napcat.url, { headers });
     this.ws = ws;
 
     ws.on("open", async () => {
-      console.log("连接成功，开始监听消息");
+      logger.info("连接成功，开始监听消息");
       this.startHeartbeat();
       this.scheduleTimer = scheduleLoop(this);
       this.pumpActionQueue();
@@ -131,7 +124,7 @@ export class NapcatClient {
         try {
           await this.sendPrivateText(config.permissions.rootUserId, "Bot成功启动");
         } catch (error) {
-          console.warn("启动通知发送失败:", error);
+          logger.warn("启动通知发送失败:", error);
         }
       }
     });
@@ -145,14 +138,14 @@ export class NapcatClient {
     });
 
     ws.on("close", (code, reason) => {
-      console.warn(`连接已关闭: ${code} ${reason.toString()}`);
+      logger.warn(`连接已关闭: ${code} ${reason.toString()}`);
       this.failPendingActions(new Error(`WebSocket closed: ${code} ${reason.toString()}`));
       this.cleanup();
       this.scheduleReconnect();
     });
 
     ws.on("error", (error) => {
-      console.error("WebSocket 错误:", error);
+      logger.error("WebSocket 错误:", error);
     });
   }
 
@@ -334,7 +327,7 @@ export class NapcatClient {
     try {
       event = JSON.parse(raw);
     } catch {
-      console.warn(`[警告] 无法解析的消息: ${raw}`);
+      logger.warn(`[警告] 无法解析的消息: ${raw}`);
       return;
     }
 
@@ -346,7 +339,7 @@ export class NapcatClient {
       try {
         await handleEvent(this, event as OneBotEvent);
       } catch (error) {
-        console.error("事件处理失败:", error);
+        logger.error("事件处理失败:", error);
       }
       return;
     }
@@ -379,7 +372,7 @@ export class NapcatClient {
 
       const now = Date.now();
       if (now - this.lastPongAt > config.napcat.heartbeatTimeoutMs) {
-        console.warn("心跳超时，准备重连");
+        logger.warn("心跳超时，准备重连");
         ws.terminate();
         return;
       }
@@ -387,7 +380,7 @@ export class NapcatClient {
       try {
         ws.ping();
       } catch (error) {
-        console.warn("心跳 ping 失败:", error);
+        logger.warn("心跳 ping 失败:", error);
       }
     }, interval);
   }
@@ -556,20 +549,9 @@ export class NapcatClient {
     const current = this.getActionLogThreshold(level);
     if (current > threshold) return;
 
-    const args: [string, ...unknown[]] = meta === undefined ? [message] : [message, meta];
-    switch (level) {
-      case "error":
-        console.error(...args);
-        return;
-      case "warn":
-        console.warn(...args);
-        return;
-      case "info":
-        console.info(...args);
-        return;
-      case "debug":
-        console.debug(...args);
-    }
+    // 已由 NAPCAT_ACTION_LOG_LEVEL 完成门控，使用 emitRaw 跳过 LOG_LEVEL 二次过滤
+    const args: unknown[] = meta === undefined ? [message] : [message, meta];
+    logger.emitRaw(level, ...args);
   }
 
   private getActionLogThreshold(level: ActionLogLevel): number {
