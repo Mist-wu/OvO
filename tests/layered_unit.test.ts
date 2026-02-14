@@ -10,6 +10,7 @@ import { ChatAgentLoop } from "../src/chat/agent_loop";
 import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
 import { resolveVisualInputs } from "../src/chat/media";
 import type { ChatOrchestrator, PreparedChatReply } from "../src/chat/orchestrator";
+import { planChatAction } from "../src/chat/action_planner";
 import { decideTrigger } from "../src/chat/trigger";
 import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
@@ -192,6 +193,74 @@ async function main() {
     assert.equal(lowIntent.shouldReply, false);
     assert.equal(lowIntent.reason, "not_triggered");
     assert.equal(lowIntent.willingness < 0.62, true);
+  });
+
+  await runTest("action planner chooses tool path, quote and style variant", async () => {
+    const plan = planChatAction({
+      event: {
+        scope: "group",
+        groupId: 998,
+        userId: 12345,
+        messageId: 7788,
+        text: "帮我查一下今天美元汇率？",
+      },
+      decision: {
+        shouldReply: true,
+        reason: "mentioned",
+        priority: "must",
+        waitMs: 0,
+        willingness: 1,
+      },
+      normalizedUserText: "帮我查一下今天美元汇率？",
+      toolResult: {
+        type: "direct",
+        tool: "fx",
+        skillName: "fx",
+        text: "USD/CNY ...",
+      },
+      stateContext: {
+        emotionLabel: "curious",
+        emotionScore: 0.2,
+        userProfileText: "u",
+        relationshipText: "r",
+        groupTopicText: "汇率",
+        groupActivityText: "中活跃",
+      },
+    });
+
+    assert.equal(plan.type, "tool_direct");
+    assert.equal(plan.shouldQuote, true);
+    assert.equal(plan.memoryMode, "full");
+    assert.equal(plan.styleVariant === "concise" || plan.styleVariant === "default", true);
+  });
+
+  await runTest("action planner can skip low-value group message", async () => {
+    const plan = planChatAction({
+      event: {
+        scope: "group",
+        groupId: 998,
+        userId: 23456,
+        text: "哈哈",
+      },
+      decision: {
+        shouldReply: true,
+        reason: "group_willing",
+        priority: "normal",
+        waitMs: 800,
+        willingness: 0.63,
+      },
+      normalizedUserText: "哈哈",
+      toolResult: { type: "none" },
+      stateContext: {
+        emotionLabel: "neutral",
+        emotionScore: 0,
+        userProfileText: "u",
+        relationshipText: "r",
+        groupTopicText: "闲聊",
+        groupActivityText: "低活跃",
+      },
+    });
+    assert.equal(plan.type, "no_reply");
   });
 
   await runTest("chat agent loop cancels delayed turn on follow-up", async () => {
@@ -499,6 +568,85 @@ async function main() {
     assert.deepEqual(sentTexts, ["reply:second"]);
   });
 
+  await runTest("chat agent loop sends group quote segment when planner asks quote", async () => {
+    const sentMessages: unknown[] = [];
+    const sentTexts: string[] = [];
+    const orchestrator: ChatOrchestrator = {
+      decide() {
+        return {
+          shouldReply: true,
+          reason: "replied_to_bot",
+          priority: "must",
+          waitMs: 0,
+          willingness: 1,
+        };
+      },
+      async prepare(event): Promise<PreparedChatReply> {
+        return {
+          event,
+          sessionKey: `g:${event.groupId}:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: "收到",
+            from: "llm",
+            quoteMessageId: 5566,
+          },
+        };
+      },
+      commit() { },
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const client = {
+      sendMessage: async (payload: unknown) => {
+        sentMessages.push(payload);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendPrivateText: async (_userId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendGroupText: async (_groupId: number, text: string) => {
+        sentTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "group",
+      groupId: 7788,
+      userId: 9900,
+      text: "你看下这个",
+      messageId: 5566,
+    });
+    await delay(120);
+
+    assert.equal(sentMessages.length, 1);
+    const payload = sentMessages[0] as {
+      groupId?: number;
+      message?: Array<{ type?: string; data?: { id?: number | string; text?: string } }>;
+    };
+    assert.equal(payload.groupId, 7788);
+    assert.equal(Array.isArray(payload.message), true);
+    assert.equal(payload.message?.[0]?.type, "reply");
+    assert.equal(payload.message?.[0]?.data?.id, 5566);
+    assert.equal(payload.message?.[1]?.type, "text");
+    assert.equal(payload.message?.[1]?.data?.text, "收到");
+    assert.equal(sentTexts.length, 0);
+  });
+
   await runTest("tool router detects weather location and search query", async () => {
     assert.equal(detectWeatherLocation("北京天气怎么样"), "北京");
     assert.equal(detectWeatherLocation("查 上海 天气"), "上海");
@@ -800,6 +948,39 @@ async function main() {
     });
     assert.equal(Number.isFinite(hints.userAffinityBoost), true);
     assert.equal(hints.topicRelevanceBoost >= 0, true);
+    assert.equal(hints.silenceCompensationBoost >= 0, true);
+  });
+
+  await runTest("chat state engine tracks silence compensation", async () => {
+    const engine = new ChatStateEngine({
+      userTtlMs: 60 * 60 * 1000,
+      groupTtlMs: 60 * 60 * 1000,
+      sessionTtlMs: 60 * 60 * 1000,
+      userMax: 100,
+      groupMax: 100,
+      sessionMax: 100,
+      pruneIntervalMs: 1,
+    });
+    const event = {
+      scope: "group" as const,
+      groupId: 4433,
+      userId: 1122,
+      text: "哈哈",
+    };
+
+    engine.recordIncoming(event);
+    engine.recordTriggerDecision(event, false);
+    engine.recordIncoming(event);
+    engine.recordTriggerDecision(event, false);
+    engine.recordIncoming(event);
+    engine.recordTriggerDecision(event, false);
+
+    const boosted = engine.getTriggerHints(event);
+    assert.equal(boosted.silenceCompensationBoost > 0, true);
+
+    engine.recordTriggerDecision(event, true);
+    const reset = engine.getTriggerHints(event);
+    assert.equal(reset.silenceCompensationBoost <= boosted.silenceCompensationBoost, true);
   });
 
   await runTest("chat state engine prunes stale runtime state by ttl", async () => {
