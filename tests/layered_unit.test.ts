@@ -43,6 +43,8 @@ import {
 import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ChatMemoryStore } from "../src/storage/chat_memory_store";
 import { ConfigStore } from "../src/storage/config_store";
+import { configStore } from "../src/storage/config_store";
+import { cooldownMiddleware } from "../src/napcat/commands/middleware";
 
 async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
   try {
@@ -1002,6 +1004,79 @@ async function main() {
     assert.equal(persisted.version, 1);
     assert.equal(persisted.groupEnabled?.["12345"], false);
     assert.equal(persisted.cooldownMs, 777);
+  });
+
+  await runTest("cooldown middleware prunes ttl and caps keys", async () => {
+    const previous = {
+      cooldownMs: configStore.getCooldownMs(),
+      cooldownMaxKeys: config.permissions.cooldownMaxKeys,
+      cooldownPruneIntervalMs: config.permissions.cooldownPruneIntervalMs,
+      cooldownEntryTtlMs: config.permissions.cooldownEntryTtlMs,
+    };
+
+    const notifications: string[] = [];
+    let executed = 0;
+    const runCooldown = async (userId: number, commandName = "ping") => {
+      const context = {
+        userId,
+        groupId: undefined,
+        messageType: "private",
+        isRoot: true,
+        command: {
+          definition: {
+            name: commandName,
+          },
+        },
+        sendText: async (text: string) => {
+          notifications.push(text);
+        },
+      } as unknown as Parameters<typeof cooldownMiddleware>[0];
+
+      await cooldownMiddleware(context, async () => {
+        executed += 1;
+      });
+    };
+
+    try {
+      configStore.setCooldownMs(0);
+      await runCooldown(99901);
+      executed = 0;
+      notifications.length = 0;
+
+      configStore.setCooldownMs(1000);
+      config.permissions.cooldownMaxKeys = 2;
+      config.permissions.cooldownPruneIntervalMs = 1;
+      config.permissions.cooldownEntryTtlMs = 60 * 60 * 1000;
+
+      await runCooldown(9101);
+      await runCooldown(9101);
+      assert.equal(executed, 1);
+      assert.equal(notifications.some((item) => item.includes("冷却中")), true);
+
+      await runCooldown(9102);
+      await runCooldown(9103);
+      await runCooldown(9101);
+      assert.equal(executed, 4);
+
+      await runCooldown(9103);
+      assert.equal(executed, 4);
+
+      config.permissions.cooldownMaxKeys = 100;
+      config.permissions.cooldownPruneIntervalMs = 1;
+      config.permissions.cooldownEntryTtlMs = 5;
+
+      await runCooldown(9201, "echo");
+      await delay(20);
+      await runCooldown(9201, "echo");
+      assert.equal(executed, 6);
+    } finally {
+      configStore.setCooldownMs(0);
+      await runCooldown(99902);
+      configStore.setCooldownMs(previous.cooldownMs);
+      config.permissions.cooldownMaxKeys = previous.cooldownMaxKeys;
+      config.permissions.cooldownPruneIntervalMs = previous.cooldownPruneIntervalMs;
+      config.permissions.cooldownEntryTtlMs = previous.cooldownEntryTtlMs;
+    }
   });
 
   await runTest("external call retries transient failures", async () => {

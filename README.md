@@ -85,6 +85,12 @@
   - `/帮助` 查看 user 指令列表
   - `/天气 <城市>` 查询天气
 
+### 命令冷却配置
+- `COMMAND_COOLDOWN_MS`：命令冷却时长
+- `COMMAND_COOLDOWN_MAX_KEYS`：最多保留的冷却键数量
+- `COMMAND_COOLDOWN_PRUNE_INTERVAL_MS`：冷却键清理最小间隔
+- `COMMAND_COOLDOWN_ENTRY_TTL_MS`：冷却键过期时间（`0` 表示自动使用 `max(cooldownMs*3, 5分钟)`）
+
 ## 聊天模式（Phase A + B-1）
 - 非指令消息会进入聊天编排器：
   - 私聊：默认回复
