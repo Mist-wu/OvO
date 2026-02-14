@@ -1,7 +1,5 @@
 import "dotenv/config";
 
-type ActionLogLevel = "error" | "warn" | "info" | "debug";
-
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
@@ -44,18 +42,6 @@ function externalServiceConfig(
   };
 }
 
-function actionLogLevelFromEnv(
-  value: string | undefined,
-  fallback: ActionLogLevel = "info",
-): ActionLogLevel {
-  if (!value) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "error" || normalized === "warn" || normalized === "info" || normalized === "debug") {
-    return normalized;
-  }
-  return fallback;
-}
-
 function stringListFromEnv(value: string | undefined, fallback: string[]): string[] {
   if (!value) return fallback;
   const items = value
@@ -83,7 +69,9 @@ export const config = {
     actionTimeoutMs: numberFromEnv(process.env.NAPCAT_ACTION_TIMEOUT_MS, 10000),
     actionLog: {
       enabled: booleanFromEnv(process.env.NAPCAT_ACTION_LOG_ENABLED, true),
-      level: actionLogLevelFromEnv(process.env.NAPCAT_ACTION_LOG_LEVEL, "info"),
+      level: (["error", "warn", "info", "debug"] as const).find(
+        (l) => l === process.env.NAPCAT_ACTION_LOG_LEVEL?.trim().toLowerCase(),
+      ) ?? "info",
     },
     actionQueue: {
       concurrency: numberFromEnv(process.env.NAPCAT_ACTION_QUEUE_CONCURRENCY, 1),

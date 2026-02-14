@@ -119,9 +119,9 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const reply =
       toolResult.type === "context" && generated.from === "fallback"
         ? {
-            text: toolResult.fallbackText,
-            from: "tool" as const,
-          }
+          text: toolResult.fallbackText,
+          from: "tool" as const,
+        }
         : generated;
 
     return {
