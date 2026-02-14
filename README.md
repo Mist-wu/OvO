@@ -119,6 +119,10 @@
   - 每轮先规划 `no_reply / tool_direct / tool_context / llm`
   - 群聊自动决策是否使用 `reply` 消息段做引用回复
   - 支持风格变体与记忆注入分级（lite/full）
+- Action Planner（V2）：
+  - 支持显式 `wait / complete_talk` 动作
+  - 支持策略参数（`waitMs`、`toolRetryHint`）并注入提示词
+  - `wait` 为可中断等待（新消息到来时旧 turn 可被打断）
 - 状态引擎（V1）：
   - 维护用户/群/会话实时状态（TTL + 容量裁剪）
   - 为触发器提供 `userAffinity/topicRelevance/groupHeat/silenceCompensation` 提示
@@ -126,6 +130,9 @@
 - 拟人化后处理（V1）：
   - 回复后做标点与格式清理，去除 AI 套话痕迹
   - 可选轻量分句与低概率错字扰动，降低“机器腔”
+- 动态人格自适应（V1）：
+  - 基于状态引擎信号动态调节风格/黑话/回复长度
+  - 使用信号：情绪、互动亲和度、群活跃度
 - 主动发言（V2）：
   - 冷场破冰：群聊冷却后自动轻量开场
   - 话题续接：有主话题时按空窗续接
@@ -173,6 +180,12 @@
 - `CHAT_HUMANIZE_ENABLED`：是否启用拟人化后处理
 - `CHAT_HUMANIZE_TYPO_PROB`：轻微错字概率（0~1）
 - `CHAT_HUMANIZE_SPLIT_PROB`：长句分句概率（0~1）
+- `CHAT_PLANNER_WAIT_ENABLED`：是否启用 planner 的 wait 动作
+- `CHAT_PLANNER_WAIT_GROUP_EXTRA_MS`：群聊 wait 额外等待
+- `CHAT_PLANNER_WAIT_PRIVATE_EXTRA_MS`：私聊 wait 额外等待
+- `CHAT_PLANNER_WAIT_MAX_MS`：wait 最大上限
+- `CHAT_PLANNER_COMPLETE_TALK_ENABLED`：是否启用 complete_talk 动作
+- `CHAT_ADAPTIVE_PERSONA_ENABLED`：是否启用状态驱动动态人格
 - `CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED`：是否启用沉默补偿
 - `CHAT_TRIGGER_SILENCE_COMPENSATION_MAX`：沉默补偿上限
 

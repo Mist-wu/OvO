@@ -43,6 +43,10 @@
   - Planned actions: `no_reply` / `tool_direct` / `tool_context` / `llm`
   - Auto quote decision for group replies (uses OneBot `reply` segment)
   - Style variant routing (`default/warm/playful/concise`) + lite/full memory mode
+- Lightweight Action Planner V2 ready:
+  - Explicit `wait` / `complete_talk` actions
+  - Strategy params (`waitMs`, `toolRetryHint`) exposed into prompt hints
+  - Supports abortable wait to defer reply while user may continue speaking
 - Reply Humanization V1 ready:
   - Post-process chain for punctuation cleanup + AI meta stripping
   - Optional sentence split + low-probability typo injection (configurable)
@@ -59,6 +63,9 @@
   - Runtime user/group/session state with TTL + capacity prune
   - Emotion/user-affinity/group-topic context for prompt
   - Trigger hints for willingness decision (`userAffinity/topicRelevance/groupHeat/silenceCompensation`)
+- Dynamic persona adaptation V1 ready:
+  - Persona style/slang/reply length adapt by state-engine signals
+  - Inputs: emotion, relationship affinity, group activity
 - Skills runtime V1 ready:
   - Skill Loader + Registry + Executor
   - `SKILL.md` metadata (`capability`, `mode`) wired into chat tool routing
@@ -141,6 +148,11 @@
     - `CHAT_QUOTE_MODE` (`auto` / `on` / `off`)
     - `CHAT_STYLE_VARIANT_ENABLED`, `CHAT_STYLE_SWITCH_PROB`
     - `CHAT_HUMANIZE_ENABLED`, `CHAT_HUMANIZE_TYPO_PROB`, `CHAT_HUMANIZE_SPLIT_PROB`
+    - `CHAT_PLANNER_WAIT_ENABLED`
+    - `CHAT_PLANNER_WAIT_GROUP_EXTRA_MS`, `CHAT_PLANNER_WAIT_PRIVATE_EXTRA_MS`
+    - `CHAT_PLANNER_WAIT_MAX_MS`
+    - `CHAT_PLANNER_COMPLETE_TALK_ENABLED`
+    - `CHAT_ADAPTIVE_PERSONA_ENABLED`
     - `CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED`, `CHAT_TRIGGER_SILENCE_COMPENSATION_MAX`
   - Gemini SDK:
     - `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_BASE_URL`, `GEMINI_TIMEOUT_MS`
@@ -184,6 +196,6 @@
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
 
 ## Next steps
-- Extend planner with explicit `wait/complete_talk` actions and tool retry policy hints
 - Expand skill capabilities with `news` and improve skill-level source formatting
-- Add dynamic emotion/persona adaptation on top of current state engine
+- Add planner-level memory/tool budget policy (token-aware) for long chats
+- Add adaptive proactive speaking strategy using relationship + topic confidence
