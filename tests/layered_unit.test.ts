@@ -1645,24 +1645,29 @@ async function main() {
     } finally {
       // 恢复原状
       logger.setLevel(originalLevel);
-      // 恢复默认 transport（console）—— 直接重设为 console transport
-      logger.setTransport((level, timestamp, args) => {
-        const prefix = `${timestamp} [${level.toUpperCase()}]`;
-        switch (level) {
-          case "debug":
-            console.debug(prefix, ...args);
-            break;
-          case "info":
-            console.info(prefix, ...args);
-            break;
-          case "warn":
-            console.warn(prefix, ...args);
-            break;
-          case "error":
-            console.error(prefix, ...args);
-            break;
-        }
-      });
+      logger.resetTransport();
+    }
+  });
+
+  await runTest("logger writes to startup-time log file under logs directory", async () => {
+    const { logger, getLogFilePath } = await import("../src/utils/logger");
+    const originalLevel = logger.getLevel();
+    const marker = `logger_file_marker_${Date.now()}`;
+
+    try {
+      logger.resetTransport();
+      logger.setLevel("debug");
+      logger.emitRaw("info", marker, { source: "unit-test" });
+
+      const logFilePath = getLogFilePath();
+      assert.equal(fs.existsSync(logFilePath), true);
+
+      const content = fs.readFileSync(logFilePath, "utf8");
+      assert.equal(content.includes(marker), true);
+      assert.equal(content.includes("[INFO]"), true);
+    } finally {
+      logger.setLevel(originalLevel);
+      logger.resetTransport();
     }
   });
 }

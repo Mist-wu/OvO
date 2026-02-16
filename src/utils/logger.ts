@@ -8,8 +8,12 @@
  *   1. 零依赖、与 console 完全兼容（入参一致）
  *   2. 可全局设置最低日志级别（通过 LOG_LEVEL 环境变量或 setLevel）
  *   3. 每条日志自动带 ISO 时间戳
- *   4. 未来可扩展为写文件 / 接入远程收集器，只需修改 transport
+ *   4. 默认同时输出到控制台与 logs/<启动时间>.log
  */
+
+import fs from "node:fs";
+import path from "node:path";
+import util from "node:util";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
@@ -48,11 +52,56 @@ const consoleTransport: LogTransport = (level, timestamp, args) => {
     }
 };
 
+function formatLogArg(value: unknown): string {
+    if (value instanceof Error) {
+        return value.stack || value.message;
+    }
+    if (typeof value === "string") {
+        return value;
+    }
+    return util.inspect(value, {
+        depth: 5,
+        breakLength: Infinity,
+        compact: true,
+    });
+}
+
+function formatLogLine(level: LogLevel, timestamp: string, args: unknown[]): string {
+    const payload = args.map((item) => formatLogArg(item)).join(" ");
+    return `${timestamp} [${level.toUpperCase()}] ${payload}\n`;
+}
+
+const startupTimeTag = new Date().toISOString().replace(/[:.]/g, "-");
+const LOG_DIR = path.resolve(process.cwd(), "logs");
+const LOG_FILE_PATH = path.join(LOG_DIR, `${startupTimeTag}.log`);
+
+const fileTransport: LogTransport = (() => {
+    try {
+        fs.mkdirSync(LOG_DIR, { recursive: true });
+        return (level, timestamp, args) => {
+            const line = formatLogLine(level, timestamp, args);
+            try {
+                fs.appendFileSync(LOG_FILE_PATH, line, "utf8");
+            } catch (error) {
+                console.error("写入日志文件失败:", error);
+            }
+        };
+    } catch (error) {
+        console.error("初始化日志目录失败，已降级为仅控制台输出:", error);
+        return () => undefined;
+    }
+})();
+
+const defaultTransport: LogTransport = (level, timestamp, args) => {
+    consoleTransport(level, timestamp, args);
+    fileTransport(level, timestamp, args);
+};
+
 class Logger {
     private minLevel: number;
     private transport: LogTransport;
 
-    constructor(level: LogLevel = "info", transport: LogTransport = consoleTransport) {
+    constructor(level: LogLevel = "info", transport: LogTransport = defaultTransport) {
         this.minLevel = LEVEL_ORDER[level];
         this.transport = transport;
     }
@@ -72,6 +121,11 @@ class Logger {
     /** 替换日志输出目标（用于测试或远程收集） */
     setTransport(transport: LogTransport): void {
         this.transport = transport;
+    }
+
+    /** 恢复默认输出目标（控制台 + 文件） */
+    resetTransport(): void {
+        this.transport = defaultTransport;
     }
 
     debug(...args: unknown[]): void {
@@ -113,3 +167,7 @@ class Logger {
 export const logger = new Logger(
     parseLogLevel(process.env.LOG_LEVEL, "info"),
 );
+
+export function getLogFilePath(): string {
+    return LOG_FILE_PATH;
+}
