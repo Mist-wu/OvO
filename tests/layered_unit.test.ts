@@ -1649,6 +1649,13 @@ async function main() {
     }
   });
 
+  await runTest("logger file tag uses Beijing standard time", async () => {
+    const { formatBeijingTimeTag } = await import("../src/utils/logger");
+    const fixedUtc = new Date("2026-01-01T16:05:09.000Z");
+    const tag = formatBeijingTimeTag(fixedUtc);
+    assert.equal(tag, "2026-01-02T00-05-09");
+  });
+
   await runTest("logger writes to startup-time log file under logs directory", async () => {
     const { logger, getLogFilePath } = await import("../src/utils/logger");
     const originalLevel = logger.getLevel();

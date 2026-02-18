@@ -71,7 +71,32 @@ function formatLogLine(level: LogLevel, timestamp: string, args: unknown[]): str
     return `${timestamp} [${level.toUpperCase()}] ${payload}\n`;
 }
 
-const startupTimeTag = new Date().toISOString().replace(/[:.]/g, "-");
+const BEIJING_TIMEZONE = "Asia/Shanghai";
+const beijingDateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: BEIJING_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+});
+
+export function formatBeijingTimeTag(date: Date = new Date()): string {
+    const parts = beijingDateTimeFormatter
+        .formatToParts(date)
+        .reduce<Record<string, string>>((accumulator, part) => {
+            if (part.type !== "literal") {
+                accumulator[part.type] = part.value;
+            }
+            return accumulator;
+        }, {});
+
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}-${parts.minute}-${parts.second}`;
+}
+
+const startupTimeTag = formatBeijingTimeTag();
 const LOG_DIR = path.resolve(process.cwd(), "logs");
 const LOG_FILE_PATH = path.join(LOG_DIR, `${startupTimeTag}.log`);
 
