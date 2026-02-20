@@ -197,24 +197,137 @@ function getReplySegmentId(segments: MessageSegment[] | undefined): number | str
   return undefined;
 }
 
-function stripCqCodes(text: string): string {
-  return text.replace(/\[CQ:[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
-function extractTextFromUnknownMessage(message: unknown): string {
-  if (typeof message === "string") {
-    return message.trim();
+function parseCqParams(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  const result: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    const [key, ...rest] = pair.split("=");
+    if (!key) continue;
+    result[key.trim()] = rest.join("=").trim();
+  }
+  return result;
+}
+
+function parseRawCqMessage(raw: string): { summary: string; segments: MessageSegment[] } {
+  const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]+))?\]/g;
+  const summaryParts: string[] = [];
+  const segments: MessageSegment[] = [];
+  let cursor = 0;
+
+  const pushText = (text: string) => {
+    const normalized = normalizeWhitespace(text);
+    if (normalized) summaryParts.push(normalized);
+  };
+
+  for (const match of raw.matchAll(regex)) {
+    const full = match[0] ?? "";
+    const type = (match[1] ?? "").toLowerCase();
+    const params = parseCqParams(match[2]);
+    const index = match.index ?? 0;
+
+    if (index > cursor) {
+      pushText(raw.slice(cursor, index));
+    }
+
+    switch (type) {
+      case "image": {
+        const imageRef = params.url || params.file || params.path;
+        if (imageRef) {
+          segments.push({
+            type: "image",
+            data: {
+              url: params.url ?? "",
+              file: params.file ?? imageRef,
+              path: params.path ?? "",
+            },
+          });
+        }
+        summaryParts.push("[图片]");
+        break;
+      }
+      case "face":
+      case "mface":
+        summaryParts.push("[表情]");
+        break;
+      case "at":
+        summaryParts.push(params.qq ? `@${params.qq}` : "@用户");
+        break;
+      case "reply":
+        break;
+      default:
+        summaryParts.push(`[${type}]`);
+        break;
+    }
+
+    cursor = index + full.length;
   }
 
+  if (cursor < raw.length) {
+    pushText(raw.slice(cursor));
+  }
+
+  return {
+    summary: normalizeWhitespace(summaryParts.join(" ")),
+    segments,
+  };
+}
+
+function summarizeQuotedSegments(segments: MessageSegment[]): string {
+  const parts: string[] = [];
+  for (const segment of segments) {
+    if (segment.type === "text") {
+      const text = segment.data?.text;
+      if (typeof text === "string" && text.trim()) {
+        parts.push(text.trim());
+      }
+      continue;
+    }
+
+    if (segment.type === "image") {
+      parts.push("[图片]");
+      continue;
+    }
+
+    if (segment.type === "face" || segment.type === "mface") {
+      parts.push("[表情]");
+      continue;
+    }
+
+    if (segment.type === "at") {
+      const qq = segment.data?.qq;
+      parts.push(
+        typeof qq === "number" || typeof qq === "string" ? `@${String(qq)}` : "@用户",
+      );
+      continue;
+    }
+
+    if (segment.type === "reply") {
+      continue;
+    }
+
+    parts.push(`[${segment.type}]`);
+  }
+  return normalizeWhitespace(parts.join(" "));
+}
+
+function extractSegmentsFromUnknownMessage(message: unknown): MessageSegment[] {
   if (Array.isArray(message)) {
-    return extractTextFromSegments(message as MessageSegment[]);
+    return message as MessageSegment[];
   }
 
   if (message && typeof message === "object" && "type" in message && "data" in message) {
-    return extractTextFromSegments([message as MessageSegment]);
+    return [message as MessageSegment];
   }
 
-  return "";
+  if (typeof message === "string") {
+    return parseRawCqMessage(message).segments;
+  }
+
+  return [];
 }
 
 function getSenderNameFromUnknown(sender: unknown): string | undefined {
@@ -243,16 +356,31 @@ async function resolveQuotedMessage(
     const response = await client.getMsg(replyMessageId);
     const data = response.data as GetMsgData | undefined;
     const senderName = getSenderNameFromUnknown(data?.sender);
-    const directText = extractTextFromUnknownMessage(data?.message);
+
+    const messageRawString = typeof data?.message === "string" ? data.message.trim() : "";
+    const parsedMessageString = messageRawString ? parseRawCqMessage(messageRawString) : undefined;
+
     const rawMessage = typeof data?.raw_message === "string" ? data.raw_message.trim() : "";
-    const cleanedRawMessage = rawMessage ? stripCqCodes(rawMessage) : "";
-    const text = directText || cleanedRawMessage || "(引用消息为非文本内容)";
+    const parsedRawMessage = rawMessage ? parseRawCqMessage(rawMessage) : undefined;
+
+    let quotedSegments = extractSegmentsFromUnknownMessage(data?.message);
+    if (quotedSegments.length <= 0 && parsedRawMessage && parsedRawMessage.segments.length > 0) {
+      quotedSegments = parsedRawMessage.segments;
+    }
+
+    const summaryFromSegments = summarizeQuotedSegments(quotedSegments);
+    const text =
+      summaryFromSegments ||
+      parsedMessageString?.summary ||
+      parsedRawMessage?.summary ||
+      "(引用消息为非文本内容)";
 
     return {
       messageId: replyMessageId,
       text,
       senderName,
       rawMessage: rawMessage || undefined,
+      segments: quotedSegments.length > 0 ? quotedSegments : undefined,
       userId:
         typeof data?.user_id === "number" || typeof data?.user_id === "string"
           ? data.user_id

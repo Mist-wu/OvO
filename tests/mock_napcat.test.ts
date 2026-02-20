@@ -99,6 +99,7 @@ async function createMockServer() {
 
       if (payload.action === "get_msg") {
         const messageId = params.message_id;
+        const isMediaQuoted = String(messageId) === "imgface001";
         ws.send(
           JSON.stringify({
             status: "ok",
@@ -114,8 +115,25 @@ async function createMockServer() {
                 user_id: 445566,
                 nickname: "QuotedUser",
               },
-              message: "北京天气这两天怎么样",
-              raw_message: "北京天气这两天怎么样",
+              message: isMediaQuoted
+                ? [
+                  {
+                    type: "image",
+                    data: {
+                      file: "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                    },
+                  },
+                  {
+                    type: "face",
+                    data: {
+                      id: 14,
+                    },
+                  },
+                ]
+                : "北京天气这两天怎么样",
+              raw_message: isMediaQuoted
+                ? "[CQ:image,file=data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=][CQ:face,id=14]"
+                : "北京天气这两天怎么样",
               font: 0,
               user_id: 445566,
               group_id: 65432,
@@ -595,6 +613,35 @@ async function main() {
           messageToText(item.params.message) === "刚卡了",
       );
       assert.equal(messageToText(action.params.message), "刚卡了");
+    });
+
+    await runTest("group reply with quoted image and emoji is accepted by chat", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65436,
+        user_id: 33339,
+        self_id: 99999,
+        message_id: 8900,
+        message: [
+          { type: "reply", data: { id: "imgface001" } },
+          { type: "text", data: { text: "小o 这个呢" } },
+        ],
+        raw_message: "[CQ:reply,id=imgface001]小o 这个呢",
+      });
+
+      const getMsgAction = await server.waitForAction(
+        (item) => item.action === "get_msg" && item.params.message_id === "imgface001",
+      );
+      assert.equal(getMsgAction.action, "get_msg");
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 65436 &&
+          messageToText(item.params.message).length > 0,
+      );
+      assert.equal(messageToText(action.params.message).length > 0, true);
     });
 
     await runTest("group plain text without trigger stays silent", async () => {

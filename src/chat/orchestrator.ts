@@ -79,7 +79,16 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const sessionKey = createSessionKey(event);
     const history = this.sessions.get(sessionKey);
     const stateContext = chatStateEngine.getPromptState(event);
-    const visuals = await resolveVisualInputs(event.segments, options?.signal);
+    const directVisuals = await resolveVisualInputs(event.segments, options?.signal);
+    let quotedVisuals: Awaited<ReturnType<typeof resolveVisualInputs>> = [];
+    if (event.quotedMessage?.segments && event.quotedMessage.segments.length > 0) {
+      const room = Math.max(0, config.chat.mediaMaxImages - directVisuals.length);
+      if (room > 0) {
+        const resolvedQuoted = await resolveVisualInputs(event.quotedMessage.segments, options?.signal);
+        quotedVisuals = resolvedQuoted.slice(0, room);
+      }
+    }
+    const visuals = [...directVisuals, ...quotedVisuals];
     const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
     const toolResult = await routeChatTool(event, options?.signal);
     const plan = planChatAction({

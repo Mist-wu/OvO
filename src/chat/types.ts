@@ -8,6 +8,7 @@ export type ChatQuotedMessage = {
   senderName?: string;
   rawMessage?: string;
   userId?: number | string;
+  segments?: MessageSegment[];
 };
 
 export type ChatEvent = {
