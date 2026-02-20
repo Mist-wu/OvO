@@ -2,6 +2,14 @@ import type { MessageSegment } from "../napcat/message";
 
 export type ChatScope = "group" | "private";
 
+export type ChatQuotedMessage = {
+  messageId: number | string;
+  text: string;
+  senderName?: string;
+  rawMessage?: string;
+  userId?: number | string;
+};
+
 export type ChatEvent = {
   scope: ChatScope;
   userId: number;
@@ -13,6 +21,7 @@ export type ChatEvent = {
   text: string;
   rawMessage?: string;
   segments?: MessageSegment[];
+  quotedMessage?: ChatQuotedMessage;
 };
 
 export type ChatVisualInput = {

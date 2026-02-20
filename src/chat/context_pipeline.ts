@@ -69,6 +69,12 @@ export const defaultChatContextTransformer: ChatContextTransformer = async (inpu
   const transformed: BuildContextInput = {
     ...input,
     userText: clipText(input.userText, 800),
+    quotedMessage: input.quotedMessage
+      ? {
+        ...input.quotedMessage,
+        text: clipText(input.quotedMessage.text, 600),
+      }
+      : undefined,
     toolContext: input.toolContext ? clipText(input.toolContext, 2600) : input.toolContext,
     plannerHint: input.plannerHint ? clipText(input.plannerHint, 280) : input.plannerHint,
     history: sanitizeHistory(input.history, maxHistoryItems),

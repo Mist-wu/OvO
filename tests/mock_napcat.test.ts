@@ -97,6 +97,36 @@ async function createMockServer() {
         return;
       }
 
+      if (payload.action === "get_msg") {
+        const messageId = params.message_id;
+        ws.send(
+          JSON.stringify({
+            status: "ok",
+            retcode: 0,
+            data: {
+              time: Math.floor(Date.now() / 1000),
+              message_type: "group",
+              message_id:
+                typeof messageId === "number" || typeof messageId === "string" ? messageId : 0,
+              real_id: 0,
+              message_seq: 0,
+              sender: {
+                user_id: 445566,
+                nickname: "QuotedUser",
+              },
+              message: "北京天气这两天怎么样",
+              raw_message: "北京天气这两天怎么样",
+              font: 0,
+              user_id: 445566,
+              group_id: 65432,
+              emoji_likes_list: [],
+            },
+            echo: payload.echo,
+          }),
+        );
+        return;
+      }
+
       if (payload.action === "delayed_ok") {
         setTimeout(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -538,6 +568,35 @@ async function main() {
       assert.equal(messageToText(action.params.message), "刚卡了");
     });
 
+    await runTest("group reply message fetches quoted content before chat", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65435,
+        user_id: 33338,
+        self_id: 99999,
+        message_id: 8899,
+        message: [
+          { type: "reply", data: { id: "778899" } },
+          { type: "text", data: { text: "小o 你怎么看" } },
+        ],
+        raw_message: "[CQ:reply,id=778899]小o 你怎么看",
+      });
+
+      const getMsgAction = await server.waitForAction(
+        (item) => item.action === "get_msg" && item.params.message_id === "778899",
+      );
+      assert.equal(getMsgAction.action, "get_msg");
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 65435 &&
+          messageToText(item.params.message) === "刚卡了",
+      );
+      assert.equal(messageToText(action.params.message), "刚卡了");
+    });
+
     await runTest("group plain text without trigger stays silent", async () => {
       server.sendEvent({
         post_type: "message",
@@ -561,6 +620,9 @@ async function main() {
     });
 
     await runTest("private image message triggers multimodal chat fallback", async () => {
+      const isExpectedFallbackText = (text: string) =>
+        text === "刚卡了" || text.includes("Gemini 服务暂时不可用");
+
       server.sendEvent({
         post_type: "message",
         message_type: "private",
@@ -580,9 +642,10 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 33335 &&
-          messageToText(item.params.message) === "刚卡了",
+          isExpectedFallbackText(messageToText(item.params.message)),
+        2500,
       );
-      assert.equal(messageToText(action.params.message), "刚卡了");
+      assert.equal(isExpectedFallbackText(messageToText(action.params.message)), true);
     });
 
     await runTest("private chat waits for follow-up and only replies once", async () => {

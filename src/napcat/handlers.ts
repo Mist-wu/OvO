@@ -1,7 +1,7 @@
 import { logger } from "../utils/logger";
 import { config } from "../config";
 import { chatAgentLoop } from "../chat";
-import type { ChatEvent } from "../chat/types";
+import type { ChatEvent, ChatQuotedMessage } from "../chat/types";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
 import { parseCommand } from "./commands/registry";
@@ -93,7 +93,8 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   const userId = event.user_id;
   if (typeof userId !== "number") return;
 
-  const chatEvent = toChatEvent(event, message);
+  const quotedMessage = await resolveQuotedMessage(client, event);
+  const chatEvent = toChatEvent(event, message, quotedMessage);
   await chatAgentLoop.onIncomingMessage(client, chatEvent);
 }
 
@@ -175,6 +176,97 @@ function extractTextFromSegments(segments: MessageSegment[]): string {
     .trim();
 }
 
+type GetMsgData = {
+  message?: unknown;
+  raw_message?: unknown;
+  sender?: unknown;
+  user_id?: unknown;
+};
+
+function getReplySegmentId(segments: MessageSegment[] | undefined): number | string | undefined {
+  if (!Array.isArray(segments)) return undefined;
+
+  for (const segment of segments) {
+    if (segment.type !== "reply") continue;
+    const id = segment.data?.id;
+    if (typeof id === "number" || typeof id === "string") {
+      return id;
+    }
+  }
+
+  return undefined;
+}
+
+function stripCqCodes(text: string): string {
+  return text.replace(/\[CQ:[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function extractTextFromUnknownMessage(message: unknown): string {
+  if (typeof message === "string") {
+    return message.trim();
+  }
+
+  if (Array.isArray(message)) {
+    return extractTextFromSegments(message as MessageSegment[]);
+  }
+
+  if (message && typeof message === "object" && "type" in message && "data" in message) {
+    return extractTextFromSegments([message as MessageSegment]);
+  }
+
+  return "";
+}
+
+function getSenderNameFromUnknown(sender: unknown): string | undefined {
+  if (!sender || typeof sender !== "object") return undefined;
+
+  const parsed = sender as { card?: unknown; nickname?: unknown };
+  if (typeof parsed.card === "string" && parsed.card.trim()) {
+    return parsed.card.trim();
+  }
+  if (typeof parsed.nickname === "string" && parsed.nickname.trim()) {
+    return parsed.nickname.trim();
+  }
+
+  return undefined;
+}
+
+async function resolveQuotedMessage(
+  client: NapcatClient,
+  event: MessageEvent,
+): Promise<ChatQuotedMessage | undefined> {
+  const segments = Array.isArray(event.message) ? event.message : undefined;
+  const replyMessageId = getReplySegmentId(segments);
+  if (replyMessageId === undefined) return undefined;
+
+  try {
+    const response = await client.getMsg(replyMessageId);
+    const data = response.data as GetMsgData | undefined;
+    const senderName = getSenderNameFromUnknown(data?.sender);
+    const directText = extractTextFromUnknownMessage(data?.message);
+    const rawMessage = typeof data?.raw_message === "string" ? data.raw_message.trim() : "";
+    const cleanedRawMessage = rawMessage ? stripCqCodes(rawMessage) : "";
+    const text = directText || cleanedRawMessage || "(引用消息为非文本内容)";
+
+    return {
+      messageId: replyMessageId,
+      text,
+      senderName,
+      rawMessage: rawMessage || undefined,
+      userId:
+        typeof data?.user_id === "number" || typeof data?.user_id === "string"
+          ? data.user_id
+          : undefined,
+    };
+  } catch (error) {
+    logger.warn(`[chat] 获取引用消息失败 message_id=${String(replyMessageId)}`, error);
+    return {
+      messageId: replyMessageId,
+      text: "(引用消息读取失败)",
+    };
+  }
+}
+
 function formatTemplate(template: string, data: Record<string, unknown>): string {
   return template.replace(/\{(\w+)\}/g, (match, key) => {
     const value = data[key];
@@ -199,19 +291,14 @@ async function sendContextText(
 
 function getSenderName(event: MessageEvent): string | undefined {
   const sender = (event as { sender?: unknown }).sender;
-  if (!sender || typeof sender !== "object") return undefined;
-
-  const parsed = sender as { card?: unknown; nickname?: unknown };
-  if (typeof parsed.card === "string" && parsed.card.trim()) {
-    return parsed.card.trim();
-  }
-  if (typeof parsed.nickname === "string" && parsed.nickname.trim()) {
-    return parsed.nickname.trim();
-  }
-  return undefined;
+  return getSenderNameFromUnknown(sender);
 }
 
-function toChatEvent(event: MessageEvent, message: string): ChatEvent {
+function toChatEvent(
+  event: MessageEvent,
+  message: string,
+  quotedMessage?: ChatQuotedMessage,
+): ChatEvent {
   const groupId = typeof event.group_id === "number" ? event.group_id : undefined;
   const scope = event.message_type === "group" ? "group" : "private";
   const segments = Array.isArray(event.message) ? event.message : undefined;
@@ -235,5 +322,6 @@ function toChatEvent(event: MessageEvent, message: string): ChatEvent {
     text: message,
     rawMessage: typeof event.raw_message === "string" ? event.raw_message : undefined,
     segments,
+    quotedMessage,
   };
 }

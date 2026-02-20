@@ -156,6 +156,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       longTermFacts: memoryContext.longTermFacts,
       userDisplayName: memoryContext.userDisplayName,
       userText: event.text,
+      quotedMessage: event.quotedMessage,
       scope: event.scope,
       mediaCount: visuals.length,
       eventTimeMs: event.eventTimeMs,

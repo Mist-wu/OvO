@@ -27,6 +27,7 @@ import { SkillRegistry } from "../src/skills/runtime/registry";
 import { SkillExecutor } from "../src/skills/runtime/executor";
 import {
   buildActionPayload,
+  createGetMsgParams,
   createGetStatusParams,
   createSendGroupMsgParams,
   createSendPrivateMsgParams,
@@ -894,6 +895,11 @@ async function main() {
       archivedSummaries: [],
       longTermFacts: [],
       userText: "今天北京天气咋样",
+      quotedMessage: {
+        messageId: 8899,
+        senderName: "乔布斯第五",
+        text: "北京天气这两天怎么样",
+      },
       scope: "private",
       mediaCount: 0,
       eventTimeMs: 1739145600000,
@@ -913,6 +919,7 @@ async function main() {
     assert.equal(prompt.includes("搜索词：北京天气"), true);
     assert.equal(prompt.includes("当前情感：curious"), true);
     assert.equal(prompt.includes("目标用户信息："), true);
+    assert.equal(prompt.includes("用户引用消息（来自乔布斯第五）：北京天气这两天怎么样"), true);
   });
 
   await runTest("persona profile adapts by state context", async () => {
@@ -1217,6 +1224,8 @@ async function main() {
 
     const getStatus = createGetStatusParams();
     assert.deepEqual(getStatus, {});
+    const getMsg = createGetMsgParams("7788");
+    assert.deepEqual(getMsg, { message_id: "7788" });
 
     const groupRequest = createSetGroupAddRequestParams("flag1", "add", true);
     assert.deepEqual(groupRequest, { flag: "flag1", sub_type: "add", approve: true });

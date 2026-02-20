@@ -1,6 +1,6 @@
 import { buildPersonaPrompt } from "./persona";
 import type { PromptStateContext } from "./state_engine";
-import type { PersonaProfile, SessionMessage } from "./types";
+import type { ChatQuotedMessage, PersonaProfile, SessionMessage } from "./types";
 import type { ChatStyleVariant } from "./action_planner";
 
 export type BuildContextInput = {
@@ -10,6 +10,7 @@ export type BuildContextInput = {
   longTermFacts: string[];
   userDisplayName?: string;
   userText: string;
+  quotedMessage?: ChatQuotedMessage;
   scope: "group" | "private";
   mediaCount: number;
   eventTimeMs?: number;
@@ -55,6 +56,10 @@ export function buildPrompt(input: BuildContextInput): string {
       ? input.longTermFacts.map((item, index) => `${index + 1}. ${item}`).join("\n")
       : "(暂无长期记忆)";
   const normalizedUserText = input.userText.trim() || "(无文本，仅图片/表情包)";
+  const quotedMessageText = input.quotedMessage?.text?.trim();
+  const quotedMessageHint = quotedMessageText
+    ? `用户引用消息${input.quotedMessage?.senderName ? `（来自${input.quotedMessage.senderName}）` : ""}：${quotedMessageText}`
+    : "用户引用消息：无";
   const mediaHint =
     input.mediaCount > 0 ? `附加媒体数量：${input.mediaCount}（可能为图片或GIF）` : "附加媒体数量：0";
   const userNameHint = input.userDisplayName ? `用户称呼参考：${input.userDisplayName}` : "用户称呼参考：未知";
@@ -101,6 +106,7 @@ export function buildPrompt(input: BuildContextInput): string {
     archivedSummaryText,
     "以下是最近会话（按时间顺序）：",
     historyText,
+    quotedMessageHint,
     `用户当前消息：${normalizedUserText}`,
     "请直接输出回复正文，不要附加解释。",
   ].join("\n\n");

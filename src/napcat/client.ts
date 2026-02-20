@@ -7,6 +7,7 @@ import WebSocket from "ws";
 import { config } from "../config";
 import { scheduleLoop } from "../utils/schedule_tasks";
 import {
+  createGetMsgParams,
   createGetStatusParams,
   createSendGroupMsgParams,
   createSendPrivateMsgParams,
@@ -291,6 +292,10 @@ export class NapcatClient {
 
   getStatus(): Promise<ActionResponse<ActionData<"get_status">>> {
     return this.sendAction("get_status", createGetStatusParams());
+  }
+
+  getMsg(messageId: number | string): Promise<ActionResponse<ActionData<"get_msg">>> {
+    return this.sendAction("get_msg", createGetMsgParams(messageId));
   }
 
   approveGroupRequest(

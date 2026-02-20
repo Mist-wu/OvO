@@ -35,6 +35,25 @@ type SetFriendAddRequestParams = {
 
 type GetStatusParams = Record<string, never>;
 
+type GetMsgParams = {
+  message_id: number | string;
+};
+
+type GetMsgData = {
+  time?: number;
+  message_type?: string;
+  message_id?: number | string;
+  real_id?: number;
+  message_seq?: number;
+  sender?: Record<string, unknown>;
+  message?: string | MessageSegment[] | Record<string, unknown>;
+  raw_message?: string;
+  font?: number;
+  group_id?: number | string;
+  user_id?: number | string;
+  emoji_likes_list?: unknown[];
+};
+
 export type NapcatActionMap = {
   send_private_msg: {
     params: SendPrivateMsgParams;
@@ -55,6 +74,10 @@ export type NapcatActionMap = {
   get_status: {
     params: GetStatusParams;
     data: Record<string, unknown>;
+  };
+  get_msg: {
+    params: GetMsgParams;
+    data: GetMsgData;
   };
 };
 
@@ -100,6 +123,12 @@ export function createSendGroupMsgParams(
 
 export function createGetStatusParams(): GetStatusParams {
   return {};
+}
+
+export function createGetMsgParams(messageId: number | string): GetMsgParams {
+  return {
+    message_id: messageId,
+  };
 }
 
 export function createSetGroupAddRequestParams(
