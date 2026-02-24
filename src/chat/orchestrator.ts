@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { config } from "../config";
 import { planChatAction } from "./action_planner";
 import { createChatContextPipeline } from "./context_pipeline";
+import { groupMessageCache } from "./group_message_cache";
 import { resolveVisualInputs } from "./media";
 import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
@@ -11,7 +12,7 @@ import { createContextSessionKey, InMemorySessionStore } from "./session_store";
 import { chatStateEngine } from "./state_engine";
 import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
-import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
+import type { ChatEvent, ChatReply, SessionMessage, TriggerDecision } from "./types";
 
 export type PreparedChatReply = {
   event: ChatEvent;
@@ -62,7 +63,11 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     }
 
     const sessionKey = createContextSessionKey(event);
-    const history = this.sessions.get(sessionKey);
+    const baseHistory = this.sessions.get(sessionKey);
+    const cachedGroupContext = groupMessageCache.getContextMessagesForReply(event, baseHistory, {
+      limit: 10,
+    });
+    const history = mergePromptHistory(baseHistory, cachedGroupContext, config.chat.maxSessionMessages + 10);
     const stateContext = chatStateEngine.getPromptState(event);
     const directVisuals = await resolveVisualInputs(event.segments, options?.signal);
     let quotedVisuals: Awaited<ReturnType<typeof resolveVisualInputs>> = [];
@@ -163,7 +168,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const generated = await generateChatReply({
       prompt,
       visuals,
-          seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
+      seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
       signal: options?.signal,
     });
     const reply =
@@ -219,6 +224,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       text: normalizedUserText,
       ts: Date.now(),
       speakerName: event.senderName?.trim() || `用户${event.userId}`,
+      sourceMessageId: event.messageId,
     });
     this.sessions.append(sessionKey, {
       role: "assistant",
@@ -233,6 +239,43 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     });
     chatStateEngine.recordReply(event, replyText);
   }
+}
+
+function mergePromptHistory(base: SessionMessage[], extras: SessionMessage[], maxItems: number): SessionMessage[] {
+  if (extras.length <= 0) {
+    return base;
+  }
+
+  const seenMessageIds = new Set<string>();
+  const seenFallback = new Set<string>();
+  const merged = [...base];
+
+  for (const item of base) {
+    if (item.sourceMessageId !== undefined) {
+      seenMessageIds.add(String(item.sourceMessageId));
+      continue;
+    }
+    seenFallback.add(`${item.role}|${item.speakerName ?? ""}|${item.text}`);
+  }
+
+  for (const item of extras) {
+    if (item.sourceMessageId !== undefined) {
+      const id = String(item.sourceMessageId);
+      if (seenMessageIds.has(id)) continue;
+      seenMessageIds.add(id);
+    } else {
+      const key = `${item.role}|${item.speakerName ?? ""}|${item.text}`;
+      if (seenFallback.has(key)) continue;
+      seenFallback.add(key);
+    }
+    merged.push(item);
+  }
+
+  merged.sort((a, b) => a.ts - b.ts);
+  if (merged.length <= maxItems) {
+    return merged;
+  }
+  return merged.slice(merged.length - maxItems);
 }
 
 function summarizeUserMessage(text: string, mediaCount: number): string {

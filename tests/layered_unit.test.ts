@@ -16,6 +16,7 @@ import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { decideProactiveActions } from "../src/chat/proactive";
 import { getPersonaProfile } from "../src/chat/persona";
+import { GroupMessageCache } from "../src/chat/group_message_cache";
 import { InMemorySessionStore, createContextSessionKey, createSessionKey } from "../src/chat/session_store";
 import { ChatStateEngine } from "../src/chat/state_engine";
 import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
@@ -87,6 +88,10 @@ async function main() {
     assert.ok(helpCommand);
     assert.equal(helpCommand?.definition.name, "user_help");
     assert.equal(helpCommand?.definition.access, "user");
+
+    const compactCommand = parseCommand("/记忆压缩 user 12345");
+    assert.ok(compactCommand);
+    assert.equal(compactCommand?.definition.name, "memory_compact");
   });
 
   await runTest("chat trigger requires @ in group chats", async () => {
@@ -1344,6 +1349,69 @@ async function main() {
     assert.notEqual(createSessionKey(e1), createSessionKey(e2));
   });
 
+  await runTest("group message cache provides non-overlapping context messages", async () => {
+    const cache = new GroupMessageCache({
+      maxGroups: 10,
+      maxMessagesPerGroup: 20,
+      ttlMs: 60 * 60 * 1000,
+    });
+
+    cache.recordIncoming({
+      scope: "group",
+      groupId: 4321,
+      userId: 1001,
+      senderName: "阿星",
+      messageId: 1,
+      text: "先看日志",
+      eventTimeMs: 1000,
+    });
+    cache.recordIncoming({
+      scope: "group",
+      groupId: 4321,
+      userId: 1002,
+      senderName: "阿月",
+      messageId: 2,
+      text: "我这边复现了",
+      eventTimeMs: 2000,
+    });
+    cache.recordIncoming({
+      scope: "group",
+      groupId: 4321,
+      userId: 1003,
+      senderName: "阿风",
+      messageId: 3,
+      text: "@小o 帮我看下",
+      eventTimeMs: 3000,
+    });
+
+    const context = cache.getContextMessagesForReply(
+      {
+        scope: "group",
+        groupId: 4321,
+        userId: 1003,
+        senderName: "阿风",
+        messageId: 3,
+        text: "@小o 帮我看下",
+        eventTimeMs: 3000,
+      },
+      [
+        {
+          role: "user",
+          text: "我这边复现了",
+          ts: 2500,
+          speakerName: "阿月",
+          sourceMessageId: 2,
+        },
+      ],
+      { limit: 10 },
+    );
+
+    assert.deepEqual(
+      context.map((item) => ({ speaker: item.speakerName, text: item.text, id: item.sourceMessageId })),
+      [{ speaker: "阿星", text: "先看日志", id: 1 }],
+    );
+  });
+
   await runTest("action helpers produce expected payloads", async () => {
     const message = [{ type: "text", data: { text: "hello" } }];
 
@@ -1668,6 +1736,44 @@ async function main() {
     assert.equal(facts[0].content, "喜欢:咖啡");
     assert.equal(summaries.length, 1);
     assert.equal(summaries[0].summary, "用户提到喜欢咖啡");
+  });
+
+  await runTest("chat memory store manual replace updates facts and summaries", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-chat-memory-compact-"));
+    const filePath = path.join(tmpDir, "chat_memory.json");
+
+    const store = new ChatMemoryStore(filePath, {
+      maxFactsPerUser: 10,
+      maxSummariesPerSession: 10,
+    });
+
+    store.touchUser(20001, "阿星");
+    store.rememberFact(20001, "preference", "喜欢:咖啡");
+    store.rememberFact(20001, "preference", "喜欢:喝咖啡");
+    store.rememberFact(20001, "preference", "喜欢:  咖啡  ");
+
+    const factReplace = store.replaceUserFacts(20001, [
+      { category: "preference", content: "喜欢:咖啡" },
+      { category: "preference", content: "喜欢:咖啡" },
+      { category: "identity", content: "称呼:阿星" },
+    ]);
+    assert.equal(factReplace.before >= 1, true);
+    assert.equal(factReplace.after, 2);
+    const facts = store.getUserFacts(20001, 10);
+    assert.equal(facts.length, 2);
+
+    store.appendSessionSummary("g:200", "用户提到：喜欢咖啡；小o回应：建议早点休息", 3);
+    store.appendSessionSummary("g:200", "用户提到 喜欢咖啡。小o回应 建议早点休息。", 2);
+
+    const summaryReplace = store.replaceSessionSummaries("g:200", [
+      { summary: "用户提到喜欢咖啡", archivedMessageCount: 3 },
+      { summary: "用户提到喜欢咖啡", archivedMessageCount: 5 },
+      { summary: "小o建议早点休息", archivedMessageCount: 2 },
+    ]);
+    assert.equal(summaryReplace.before >= 2, true);
+    assert.equal(summaryReplace.after, 2);
+    const summaries = store.getSessionSummaries("g:200", 10);
+    assert.equal(summaries.length, 2);
   });
 
   await runTest("chat memory manager archives old session messages", async () => {

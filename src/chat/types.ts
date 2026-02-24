@@ -58,6 +58,7 @@ export type SessionMessage = {
   text: string;
   ts: number;
   speakerName?: string;
+  sourceMessageId?: number | string;
 };
 
 export type PersonaProfile = {

@@ -4,6 +4,7 @@ import { config } from "../config";
 import type { NapcatClient } from "../napcat/client";
 import { buildMessage, reply as replySegment, text as textSegment } from "../napcat/message";
 import { buildProactiveText, decideProactiveActions, type ProactiveCandidate } from "./proactive";
+import { groupMessageCache } from "./group_message_cache";
 import { createSessionKey } from "./session_store";
 import { chatStateEngine } from "./state_engine";
 import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
@@ -261,6 +262,7 @@ export class ChatAgentLoop {
 
   async onIncomingMessage(client: NapcatClient, event: ChatEvent): Promise<void> {
     chatStateEngine.recordIncoming(event);
+    groupMessageCache.recordIncoming(event);
     const decision = this.orchestrator.decide(event);
     const sessionKey = createSessionKey(event);
     this.emit({

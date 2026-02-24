@@ -1,6 +1,7 @@
 import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
 import { askGemini } from "../../../llm";
+import { compactSessionMemoryWithLlm, compactUserMemoryWithLlm } from "../../../chat/memory_compactor";
 import { runtimeSkills } from "../../../skills/runtime";
 import { configStore } from "../../../storage/config_store";
 import type { CommandDefinition } from "../types";
@@ -86,6 +87,67 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
     }),
     defineCommand({
+      name: "memory_compact",
+      help: "/记忆压缩 <user 用户ID | session 会话Key>",
+      cooldownExempt: true,
+      parse(message) {
+        const parts = splitParts(message);
+        const command = parts[0];
+        if (command !== "/记忆压缩" && command !== "/memory_compact") return null;
+        if (parts.length < 3) return { kind: "invalid" as const };
+        const kind = parts[1]?.toLowerCase();
+        if (kind === "user") {
+          const userId = parseNumber(parts[2]);
+          if (userId === null) return { kind: "invalid" as const };
+          return { kind: "user" as const, userId };
+        }
+        if (kind === "session") {
+          const sessionKey = parts.slice(2).join(" ").trim();
+          if (!sessionKey) return { kind: "invalid" as const };
+          return { kind: "session" as const, sessionKey };
+        }
+        return { kind: "invalid" as const };
+      },
+      async execute(context, payload) {
+        const parsed = payload as
+          | { kind: "invalid" }
+          | { kind: "user"; userId: number }
+          | { kind: "session"; sessionKey: string };
+        if (parsed.kind === "invalid") {
+          await context.sendText("用法：/记忆压缩 <user 用户ID | session 会话Key>");
+          return;
+        }
+
+        await context.sendText(
+          parsed.kind === "user"
+            ? `开始压缩用户记忆 user=${parsed.userId}（LLM 手动压缩）...`
+            : `开始压缩会话摘要 session=${parsed.sessionKey}（LLM 手动压缩）...`,
+        );
+
+        try {
+          const result =
+            parsed.kind === "user"
+              ? await compactUserMemoryWithLlm(parsed.userId)
+              : await compactSessionMemoryWithLlm(parsed.sessionKey);
+          if (result.target === "user") {
+            await context.sendText(
+              `用户记忆压缩完成 user=${result.userId} facts ${result.before} -> ${result.after}` +
+              (result.note ? `\nnote=${result.note}` : ""),
+            );
+            return;
+          }
+          await context.sendText(
+            `会话摘要压缩完成 session=${result.sessionKey} summaries ${result.before} -> ${result.after}` +
+            (result.note ? `\nnote=${result.note}` : ""),
+          );
+        } catch (error) {
+          logger.warn("[memory] /记忆压缩 失败:", error);
+          const message = error instanceof Error ? error.message : String(error);
+          await context.sendText(`记忆压缩失败：${message}`);
+        }
+      },
+    }),
+    defineCommand({
       name: "help",
       help: "/help",
       cooldownExempt: true,
@@ -132,64 +194,11 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
             : "(unset)";
         await context.sendText(
           `rootUserId=${rootUserId} cooldownMs=${snapshot.cooldownMs} ` +
-          `groupEnabledDefault=${config.permissions.groupEnabledDefault} ` +
+          `groupReplyMode=@only proactiveGroupReply=false ` +
           `autoApproveGroup=${config.requests.autoApproveGroup} ` +
           `autoApproveFriend=${config.requests.autoApproveFriend} ` +
           `skillsLoaded=${skillCount}`,
         );
-      },
-    }),
-    defineCommand({
-      name: "group_on",
-      help: "/group on|off [group_id]",
-      cooldownExempt: true,
-      allowWhenGroupDisabled: true,
-      parse(message) {
-        const parts = splitParts(message);
-        if (parts[0] !== "/group" || parts[1] !== "on") return null;
-        if (parts.length > 3) return null;
-        if (!parts[2]) return { groupId: undefined };
-
-        const groupId = parseNumber(parts[2]);
-        if (groupId === null) return null;
-        return { groupId };
-      },
-      async execute(context, payload) {
-        const parsed = payload as { groupId?: number };
-        const targetGroupId =
-          typeof parsed.groupId === "number" ? parsed.groupId : context.groupId;
-        if (typeof targetGroupId !== "number") {
-          await context.sendText("请在群内使用或提供群号");
-          return;
-        }
-        configStore.setGroupEnabled(targetGroupId, true);
-        await context.sendText(`已开启群 ${targetGroupId}`);
-      },
-    }),
-    defineCommand({
-      name: "group_off",
-      cooldownExempt: true,
-      allowWhenGroupDisabled: true,
-      parse(message) {
-        const parts = splitParts(message);
-        if (parts[0] !== "/group" || parts[1] !== "off") return null;
-        if (parts.length > 3) return null;
-        if (!parts[2]) return { groupId: undefined };
-
-        const groupId = parseNumber(parts[2]);
-        if (groupId === null) return null;
-        return { groupId };
-      },
-      async execute(context, payload) {
-        const parsed = payload as { groupId?: number };
-        const targetGroupId =
-          typeof parsed.groupId === "number" ? parsed.groupId : context.groupId;
-        if (typeof targetGroupId !== "number") {
-          await context.sendText("请在群内使用或提供群号");
-          return;
-        }
-        configStore.setGroupEnabled(targetGroupId, false);
-        await context.sendText(`已关闭群 ${targetGroupId}`);
       },
     }),
     defineCommand({

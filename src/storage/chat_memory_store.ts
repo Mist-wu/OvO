@@ -36,6 +36,32 @@ type StoredChatMemoryV1 = {
 
 const CURRENT_VERSION = 1;
 
+export type MemoryFactPatchInput = {
+  category: MemoryFactCategory;
+  content: string;
+};
+
+export type SessionSummaryPatchInput = {
+  summary: string;
+  archivedMessageCount?: number;
+};
+
+function cloneFact(item: MemoryFact): MemoryFact {
+  return { ...item };
+}
+
+function cloneSummary(item: SessionSummary): SessionSummary {
+  return { ...item };
+}
+
+function cloneUserMemory(user: UserMemory): UserMemory {
+  return {
+    displayName: user.displayName,
+    lastSeenAt: user.lastSeenAt,
+    facts: user.facts.map(cloneFact),
+  };
+}
+
 
 
 function normalizeFact(raw: unknown): MemoryFact | null {
@@ -183,6 +209,11 @@ export class ChatMemoryStore {
     return user.facts.slice(-normalizedLimit);
   }
 
+  getUserMemory(userId: number): UserMemory | undefined {
+    const user = this.data.users[String(userId)];
+    return user ? cloneUserMemory(user) : undefined;
+  }
+
   touchUser(userId: number, displayName?: string): void {
     const key = String(userId);
     const now = Date.now();
@@ -258,6 +289,87 @@ export class ChatMemoryStore {
     if (!session) return [];
     const normalizedLimit = normalizePositiveInt(limit, 2);
     return session.summaries.slice(-normalizedLimit);
+  }
+
+  getSessionMemory(sessionKey: string): { summaries: SessionSummary[] } | undefined {
+    const session = this.data.sessions[sessionKey];
+    if (!session) return undefined;
+    return {
+      summaries: session.summaries.map(cloneSummary),
+    };
+  }
+
+  replaceUserFacts(userId: number, facts: MemoryFactPatchInput[]): { before: number; after: number } {
+    const key = String(userId);
+    const now = Date.now();
+    const user = this.data.users[key] ?? {
+      facts: [],
+      lastSeenAt: now,
+    };
+    const nextFacts: MemoryFact[] = [];
+    const seen = new Set<string>();
+
+    for (const item of facts) {
+      const category = item.category;
+      if (!["identity", "preference", "relationship", "meme", "other"].includes(category)) {
+        continue;
+      }
+      const content = normalizeText(item.content);
+      if (!content) continue;
+      const dedupeKey = `${category}:${content}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      nextFacts.push({
+        category,
+        content,
+        updatedAt: now,
+      });
+    }
+
+    const before = user.facts.length;
+    user.facts =
+      nextFacts.length > this.maxFactsPerUser
+        ? nextFacts.slice(nextFacts.length - this.maxFactsPerUser)
+        : nextFacts;
+    user.lastSeenAt = now;
+    this.data.users[key] = user;
+    this.persist();
+    return { before, after: user.facts.length };
+  }
+
+  replaceSessionSummaries(
+    sessionKey: string,
+    summaries: SessionSummaryPatchInput[],
+  ): { before: number; after: number } {
+    const now = Date.now();
+    const session = this.data.sessions[sessionKey] ?? { summaries: [] };
+    const nextSummaries: SessionSummary[] = [];
+    const seen = new Set<string>();
+
+    for (const item of summaries) {
+      const summary = normalizeText(item.summary);
+      if (!summary) continue;
+      if (seen.has(summary)) continue;
+      seen.add(summary);
+      const archivedMessageCount =
+        typeof item.archivedMessageCount === "number" && Number.isFinite(item.archivedMessageCount)
+          ? Math.max(1, Math.floor(item.archivedMessageCount))
+          : 1;
+      nextSummaries.push({
+        summary,
+        archivedMessageCount,
+        createdAt: now,
+      });
+    }
+
+    const before = session.summaries.length;
+    session.summaries =
+      nextSummaries.length > this.maxSummariesPerSession
+        ? nextSummaries.slice(nextSummaries.length - this.maxSummariesPerSession)
+        : nextSummaries;
+    this.data.sessions[sessionKey] = session;
+    this.persist();
+    return { before, after: session.summaries.length };
   }
 
   appendSessionSummary(sessionKey: string, summary: string, archivedMessageCount: number): void {
