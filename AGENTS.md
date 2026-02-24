@@ -29,3 +29,10 @@
 1. Build the feature or change.
 2. Add or update tests covering the change.
 3. Run the relevant tests (`pnpm run test:mock` when touching NapCat WS logic).
+
+## 优缺点
+有点保留，缺点改进
+- 优点：
+    - chat_memory.json
+    - 
+- 缺点：
