@@ -1,14 +1,13 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import { config } from "../config";
-import { configStore } from "../storage/config_store";
 import { planChatAction } from "./action_planner";
 import { createChatContextPipeline } from "./context_pipeline";
 import { resolveVisualInputs } from "./media";
 import { ChatMemoryManager } from "./memory";
 import { getPersonaProfile } from "./persona";
 import { generateChatReply } from "./reply";
-import { createSessionKey, InMemorySessionStore } from "./session_store";
+import { createContextSessionKey, InMemorySessionStore } from "./session_store";
 import { chatStateEngine } from "./state_engine";
 import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
@@ -48,20 +47,6 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       };
     }
 
-    if (
-      event.scope === "group" &&
-      typeof event.groupId === "number" &&
-      !configStore.isGroupEnabled(event.groupId)
-    ) {
-      return {
-        shouldReply: false,
-        reason: "group_disabled",
-        priority: "low",
-        waitMs: 0,
-        willingness: 0,
-      };
-    }
-
     const hints = chatStateEngine.getTriggerHints(event);
     return decideTrigger(event, config.chat.botAliases, hints);
   }
@@ -76,7 +61,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       return null;
     }
 
-    const sessionKey = createSessionKey(event);
+    const sessionKey = createContextSessionKey(event);
     const history = this.sessions.get(sessionKey);
     const stateContext = chatStateEngine.getPromptState(event);
     const directVisuals = await resolveVisualInputs(event.segments, options?.signal);
@@ -178,7 +163,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     const generated = await generateChatReply({
       prompt,
       visuals,
-      seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
+          seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
       signal: options?.signal,
     });
     const reply =
@@ -233,11 +218,13 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
       role: "user",
       text: normalizedUserText,
       ts: Date.now(),
+      speakerName: event.senderName?.trim() || `用户${event.userId}`,
     });
     this.sessions.append(sessionKey, {
       role: "assistant",
       text: replyText,
       ts: Date.now(),
+      speakerName: config.chat.personaName,
     });
     this.memory.recordTurn({
       event,

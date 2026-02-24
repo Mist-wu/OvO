@@ -3,7 +3,6 @@ import { logger } from "../utils/logger";
 import { config } from "../config";
 import type { NapcatClient } from "../napcat/client";
 import { buildMessage, reply as replySegment, text as textSegment } from "../napcat/message";
-import { configStore } from "../storage/config_store";
 import { buildProactiveText, decideProactiveActions, type ProactiveCandidate } from "./proactive";
 import { createSessionKey } from "./session_store";
 import { chatStateEngine } from "./state_engine";
@@ -106,7 +105,7 @@ export type ChatAgentLoopEvent =
   | {
     type: "proactive_skipped";
     groupId: number;
-    reason: "group_disabled" | "busy_group";
+    reason: "busy_group";
     topic: string;
   }
   | {
@@ -176,6 +175,47 @@ function hasBusySession(state: SessionLoopState): boolean {
     state.runningSeq !== undefined ||
     state.followUpTurn !== undefined
   );
+}
+
+function splitReplyIntoChunks(text: string): string[] {
+  const normalized = text
+    .split(/\r?\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!normalized) return [];
+
+  const chunks: string[] = [];
+  let current = "";
+  const flush = () => {
+    const value = current.trim();
+    if (value) chunks.push(value);
+    current = "";
+  };
+
+  const isSentenceEnd = (char: string): boolean => ["。", "！", "？", "!", "?"].includes(char);
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const char = normalized[i];
+    if (char === "\n") {
+      flush();
+      continue;
+    }
+    current += char;
+    if (!isSentenceEnd(char)) {
+      continue;
+    }
+
+    // Swallow repeated punctuation so "！！" stays in the same chunk.
+    while (i + 1 < normalized.length && isSentenceEnd(normalized[i + 1])) {
+      i += 1;
+      current += normalized[i];
+    }
+    flush();
+  }
+
+  flush();
+  return chunks.length > 0 ? chunks : [normalized];
 }
 
 
@@ -295,35 +335,10 @@ export class ChatAgentLoop {
   }
 
   async runSchedulerTick(client: NapcatClient, now = Date.now()): Promise<void> {
-    if (!config.chat.proactiveEnabled) return;
-
-    const snapshots = chatStateEngine.listGroupSnapshots(now);
-    if (snapshots.length <= 0) return;
-
-    const enabledGroups = new Set<number>();
-    for (const snapshot of snapshots) {
-      if (configStore.isGroupEnabled(snapshot.groupId)) {
-        enabledGroups.add(snapshot.groupId);
-      }
-    }
-    if (enabledGroups.size <= 0) return;
-
-    const candidates = decideProactiveActions({
-      snapshots,
-      now,
-      enabledGroups,
-      idleMs: config.chat.proactiveIdleMs,
-      continueIdleMs: config.chat.proactiveContinueIdleMs,
-      minGapMs: config.chat.proactiveMinGapMs,
-      bubbleIntervalMs: config.chat.proactiveBubbleIntervalMs,
-      minRecentMessages: config.chat.proactiveMinRecentMessages,
-      maxPerTick: config.chat.proactiveMaxPerTick,
-    });
-    if (candidates.length <= 0) return;
-
-    for (const candidate of candidates) {
-      this.enqueueProactiveTurn(client, candidate, now);
-    }
+    void client;
+    void now;
+    // 群聊策略简化为“仅阅读 + 被 @ 才回复”，禁用主动发言。
+    return;
   }
 
   private ensureSession(sessionKey: string): SessionLoopState {
@@ -567,19 +582,29 @@ export class ChatAgentLoop {
   }
 
   private async sendReply(client: NapcatClient, event: ChatEvent, reply: ChatReply): Promise<void> {
-    const text = reply.text;
+    const texts = splitReplyIntoChunks(reply.text);
+    if (texts.length <= 0) {
+      return;
+    }
     if (event.scope === "group" && typeof event.groupId === "number") {
       if (reply.quoteMessageId !== undefined) {
         await client.sendMessage({
           groupId: event.groupId,
-          message: buildMessage(replySegment(reply.quoteMessageId), textSegment(text)),
+          message: buildMessage(replySegment(reply.quoteMessageId), textSegment(texts[0])),
         });
+        for (const text of texts.slice(1)) {
+          await client.sendGroupText(event.groupId, text);
+        }
         return;
       }
-      await client.sendGroupText(event.groupId, text);
+      for (const text of texts) {
+        await client.sendGroupText(event.groupId, text);
+      }
       return;
     }
-    await client.sendPrivateText(event.userId, text);
+    for (const text of texts) {
+      await client.sendPrivateText(event.userId, text);
+    }
   }
 
   private hasBusyGroupConversations(groupId: number): boolean {
@@ -595,15 +620,6 @@ export class ChatAgentLoop {
 
   private async executeProactiveTurn(turn: ProactiveTurn): Promise<void> {
     try {
-      if (!configStore.isGroupEnabled(turn.groupId)) {
-        this.emit({
-          type: "proactive_skipped",
-          groupId: turn.groupId,
-          reason: "group_disabled",
-          topic: turn.topic,
-        });
-        return;
-      }
       if (this.hasBusyGroupConversations(turn.groupId)) {
         this.emit({
           type: "proactive_skipped",

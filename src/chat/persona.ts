@@ -26,20 +26,6 @@ function resolveStyleByVariant(variant: ChatStyleVariant | undefined): string {
   }
 }
 
-function resolveSlangByVariant(variant: ChatStyleVariant | undefined): string[] {
-  const base = ["确实", "逆天", "笑死", "懂你意思了", "沃趣"];
-  if (variant === "warm") {
-    return [...base, "别急", "慢慢来"];
-  }
-  if (variant === "playful") {
-    return [...base, "绷不住了", "有点东西"];
-  }
-  if (variant === "concise") {
-    return ["确实", "懂了", "建议这样"];
-  }
-  return base;
-}
-
 function adaptStyleByState(baseStyle: string, stateContext: PromptStateContext | undefined): string {
   if (!config.chat.adaptivePersonaEnabled || !stateContext) {
     return baseStyle;
@@ -76,22 +62,6 @@ function adaptReplyLength(
   return base;
 }
 
-function adaptSlangByState(
-  base: string[],
-  stateContext: PromptStateContext | undefined,
-): string[] {
-  if (!config.chat.adaptivePersonaEnabled || !stateContext) {
-    return base;
-  }
-  if (stateContext.relationshipText.includes("偏低")) {
-    return base.filter((item) => !["逆天", "沃趣", "绷不住了", "笑死"].includes(item));
-  }
-  if (stateContext.emotionLabel === "negative") {
-    return base.filter((item) => !["笑死", "绷不住了"].includes(item));
-  }
-  return base;
-}
-
 export function getPersonaProfile(options?: {
   styleVariant?: ChatStyleVariant;
   stateContext?: PromptStateContext;
@@ -99,26 +69,22 @@ export function getPersonaProfile(options?: {
   const styleVariant = options?.styleVariant;
   const stateContext = options?.stateContext;
   const baseStyle = resolveStyleByVariant(styleVariant);
-  const baseSlang = resolveSlangByVariant(styleVariant);
   const baseReplyLength: PersonaProfile["replyLength"] = styleVariant === "concise" ? "short" : "medium";
   return {
     name: config.chat.personaName,
     style: adaptStyleByState(baseStyle, stateContext),
-    slang: sanitizeWordList(adaptSlangByState(baseSlang, stateContext)),
     doNot: sanitizeWordList(["政治煽动", "人身攻击", "泄露隐私", "教唆违法", "编造事实"]),
     replyLength: adaptReplyLength(baseReplyLength, stateContext),
   };
 }
 
 export function buildPersonaPrompt(persona: PersonaProfile): string {
-  const slang = persona.slang.join("、");
   const doNot = persona.doNot.join("、");
   const lengthHint = persona.replyLength === "short" ? "默认 1-2 句" : "默认 2-4 句";
 
   return [
     `你的人设名是：${persona.name}`,
     `风格：${persona.style}`,
-    `可适度使用黑话：${slang}`,
     `禁止：${doNot}`,
     `回复长度：${lengthHint}`,
     "如果信息不充分，先简短追问，不要编造事实。",

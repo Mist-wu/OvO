@@ -1,4 +1,5 @@
 import { buildPersonaPrompt } from "./persona";
+import { formatMaiBotReplyPrompt } from "./maibot_prompt_templates";
 import type { PromptStateContext } from "./state_engine";
 import type { ChatQuotedMessage, PersonaProfile, SessionMessage } from "./types";
 import type { ChatStyleVariant } from "./action_planner";
@@ -39,7 +40,11 @@ function formatEventTime(eventTimeMs: number | undefined): string {
 function formatHistory(history: SessionMessage[]): string {
   if (history.length === 0) return "(无历史)";
   return history
-    .map((item) => `${item.role === "user" ? "用户" : "小o"}: ${item.text}`)
+    .map((item) => {
+      const fallbackName = item.role === "user" ? "用户" : "小o";
+      const speakerName = item.speakerName?.trim() || fallbackName;
+      return `${speakerName}: ${item.text}`;
+    })
     .join("\n");
 }
 
@@ -84,9 +89,7 @@ export function buildPrompt(input: BuildContextInput): string {
     ? `表达风格：${input.styleVariant}`
     : "表达风格：default";
   const plannerHint = input.plannerHint?.trim() || "(无)";
-
-  return [
-    personaPrompt,
+  const extraInfoBlock = [
     `场景：${scene}`,
     timeHint,
     userNameHint,
@@ -96,18 +99,34 @@ export function buildPrompt(input: BuildContextInput): string {
     groupActivityHint,
     plannerStyleHint,
     mediaHint,
-    "动作规划提示：",
-    plannerHint,
-    "工具调用上下文：",
-    toolContext,
+  ].join("\n");
+
+  const knowledgePrompt = [
     "用户长期记忆（历史偏好/身份/梗）：",
     longTermFactsText,
+    "",
     "较早会话归档摘要：",
     archivedSummaryText,
-    "以下是最近会话（按时间顺序）：",
-    historyText,
-    quotedMessageHint,
-    `用户当前消息：${normalizedUserText}`,
-    "请直接输出回复正文，不要附加解释。",
-  ].join("\n\n");
+    "",
+  ].join("\n");
+
+  const toolInfoBlock = [
+    "工具调用上下文：",
+    toolContext,
+    "",
+  ].join("\n");
+
+  return formatMaiBotReplyPrompt({
+    knowledge_prompt: knowledgePrompt,
+    tool_info_block: toolInfoBlock,
+    extra_info_block: `${extraInfoBlock}\n`,
+    identity_block: personaPrompt,
+    scene_label: scene,
+    dialogue_intro: "以下是最近会话（按时间顺序）：",
+    dialogue_prompt: historyText,
+    quoted_message_block: quotedMessageHint,
+    user_message: normalizedUserText,
+    planner_reasoning: plannerHint,
+    reply_style: `回复长度要求：${input.persona.replyLength === "short" ? "默认 1-2 句" : "默认 2-4 句"}。`,
+  });
 }

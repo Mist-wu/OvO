@@ -57,12 +57,12 @@ export type SessionMessage = {
   role: SessionRole;
   text: string;
   ts: number;
+  speakerName?: string;
 };
 
 export type PersonaProfile = {
   name: string;
   style: string;
-  slang: string[];
   doNot: string[];
   replyLength: "short" | "medium";
 };

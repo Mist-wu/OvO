@@ -15,6 +15,13 @@ export function createSessionKey(event: ChatEvent): string {
   return `p:${event.userId}`;
 }
 
+export function createContextSessionKey(event: ChatEvent): string {
+  if (event.scope === "group" && typeof event.groupId === "number") {
+    return `g:${event.groupId}`;
+  }
+  return `p:${event.userId}`;
+}
+
 export class InMemorySessionStore implements SessionStore {
   private readonly sessions = new Map<string, SessionMessage[]>();
 

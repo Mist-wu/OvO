@@ -16,7 +16,7 @@ import { buildPrompt } from "../src/chat/context_builder";
 import { detectMathExpression, detectSearchQuery, detectWeatherLocation } from "../src/chat/tool_router";
 import { decideProactiveActions } from "../src/chat/proactive";
 import { getPersonaProfile } from "../src/chat/persona";
-import { InMemorySessionStore, createSessionKey } from "../src/chat/session_store";
+import { InMemorySessionStore, createContextSessionKey, createSessionKey } from "../src/chat/session_store";
 import { ChatStateEngine } from "../src/chat/state_engine";
 import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
 import { detectFxIntent } from "../src/utils/fx";
@@ -89,7 +89,7 @@ async function main() {
     assert.equal(helpCommand?.definition.access, "user");
   });
 
-  await runTest("chat trigger follows passive strategy", async () => {
+  await runTest("chat trigger requires @ in group chats", async () => {
     const privateDecision = decideTrigger(
       {
         scope: "private",
@@ -101,7 +101,7 @@ async function main() {
     assert.equal(privateDecision.shouldReply, true);
     assert.equal(privateDecision.reason, "private_default");
 
-    const groupDecision = decideTrigger(
+    const aliasDecision = decideTrigger(
       {
         scope: "group",
         userId: 2,
@@ -111,8 +111,22 @@ async function main() {
       },
       ["小o", "ovo"],
     );
-    assert.equal(groupDecision.shouldReply, true);
-    assert.equal(groupDecision.reason, "named_bot");
+    assert.equal(aliasDecision.shouldReply, false);
+    assert.equal(aliasDecision.reason, "not_triggered");
+
+    const replySegmentDecision = decideTrigger(
+      {
+        scope: "group",
+        userId: 2,
+        groupId: 100,
+        selfId: 999,
+        text: "看这个",
+        segments: [{ type: "reply", data: { id: 123 } }],
+      },
+      ["小o", "ovo"],
+    );
+    assert.equal(replySegmentDecision.shouldReply, false);
+    assert.equal(replySegmentDecision.reason, "not_triggered");
 
     const mentionDecision = decideTrigger(
       {
@@ -165,7 +179,7 @@ async function main() {
     assert.equal(privateImageOnly.waitMs > 0, true);
   });
 
-  await runTest("chat trigger computes willingness and priority in group", async () => {
+  await runTest("chat trigger ignores group willingness without @", async () => {
     const highIntent = decideTrigger(
       {
         scope: "group",
@@ -176,11 +190,10 @@ async function main() {
       },
       ["小o", "ovo"],
     );
-    assert.equal(highIntent.shouldReply, true);
-    assert.equal(highIntent.reason, "group_willing");
-    assert.equal(highIntent.priority === "high" || highIntent.priority === "normal", true);
-    assert.equal(highIntent.willingness >= 0.62, true);
-    assert.equal(highIntent.waitMs > 0, true);
+    assert.equal(highIntent.shouldReply, false);
+    assert.equal(highIntent.reason, "not_triggered");
+    assert.equal(highIntent.waitMs, 0);
+    assert.equal(highIntent.willingness, 0);
 
     const lowIntent = decideTrigger(
       {
@@ -194,7 +207,7 @@ async function main() {
     );
     assert.equal(lowIntent.shouldReply, false);
     assert.equal(lowIntent.reason, "not_triggered");
-    assert.equal(lowIntent.willingness < 0.62, true);
+    assert.equal(lowIntent.willingness, 0);
   });
 
   await runTest("action planner chooses tool path, quote and style variant", async () => {
@@ -707,6 +720,74 @@ async function main() {
     assert.equal(sentTexts.length, 0);
   });
 
+  await runTest("chat agent loop splits multi-sentence reply into multiple messages", async () => {
+    const sentPrivateTexts: string[] = [];
+    const sentMessages: unknown[] = [];
+    const sentGroupTexts: string[] = [];
+    const orchestrator: ChatOrchestrator = {
+      decide() {
+        return {
+          shouldReply: true,
+          reason: "private_default",
+          priority: "must",
+          waitMs: 0,
+          willingness: 1,
+        };
+      },
+      async prepare(event): Promise<PreparedChatReply> {
+        return {
+          event,
+          sessionKey: `p:${event.userId}`,
+          normalizedUserText: event.text,
+          reply: {
+            text: "第一句。第二句！第三句",
+            from: "llm",
+          },
+        };
+      },
+      commit() { },
+      async handle() {
+        return null;
+      },
+    };
+
+    const loop = new ChatAgentLoop(orchestrator);
+    const client = {
+      sendMessage: async (payload: unknown) => {
+        sentMessages.push(payload);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendPrivateText: async (_userId: number, text: string) => {
+        sentPrivateTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+      sendGroupText: async (_groupId: number, text: string) => {
+        sentGroupTexts.push(text);
+        return {
+          status: "ok",
+          retcode: 0,
+        };
+      },
+    } as unknown as NapcatClient;
+
+    await loop.onIncomingMessage(client, {
+      scope: "private",
+      userId: 7020,
+      text: "test",
+    });
+    await delay(120);
+
+    assert.deepEqual(sentPrivateTexts, ["第一句。", "第二句！", "第三句"]);
+    assert.equal(sentMessages.length, 0);
+    assert.equal(sentGroupTexts.length, 0);
+  });
+
   await runTest("tool router detects weather location and search query", async () => {
     assert.equal(detectWeatherLocation("北京天气怎么样"), "北京");
     assert.equal(detectWeatherLocation("查 上海 天气"), "上海");
@@ -887,7 +968,6 @@ async function main() {
       persona: {
         name: "小o",
         style: "test",
-        slang: ["确实"],
         doNot: ["编造"],
         replyLength: "short",
       },
@@ -922,6 +1002,31 @@ async function main() {
     assert.equal(prompt.includes("用户引用消息（来自乔布斯第五）：北京天气这两天怎么样"), true);
   });
 
+  await runTest("context builder preserves speaker names in history", async () => {
+    const prompt = buildPrompt({
+      persona: {
+        name: "小o",
+        style: "test",
+        doNot: ["编造"],
+        replyLength: "short",
+      },
+      history: [
+        { role: "user", speakerName: "阿星", text: "这个方案行吗", ts: 1 },
+        { role: "assistant", speakerName: "小o", text: "先看报错日志", ts: 2 },
+        { role: "user", speakerName: "阿月", text: "我这边也复现了", ts: 3 },
+      ],
+      archivedSummaries: [],
+      longTermFacts: [],
+      userText: "@小o 看下",
+      scope: "group",
+      mediaCount: 0,
+    });
+
+    assert.equal(prompt.includes("阿星: 这个方案行吗"), true);
+    assert.equal(prompt.includes("小o: 先看报错日志"), true);
+    assert.equal(prompt.includes("阿月: 我这边也复现了"), true);
+  });
+
   await runTest("persona profile adapts by state context", async () => {
     const persona = getPersonaProfile({
       styleVariant: "default",
@@ -938,7 +1043,16 @@ async function main() {
     assert.equal(persona.style.includes("先接住情绪"), true);
     assert.equal(persona.style.includes("礼貌克制"), true);
     assert.equal(persona.replyLength, "short");
-    assert.equal(persona.slang.includes("笑死"), false);
+    const personaPrompt = buildPrompt({
+      persona,
+      history: [],
+      archivedSummaries: [],
+      longTermFacts: [],
+      userText: "你好",
+      scope: "private",
+      mediaCount: 0,
+    });
+    assert.equal(personaPrompt.includes("可适度使用黑话"), false);
   });
 
   await runTest("chat context pipeline applies transform then convert", async () => {
@@ -961,7 +1075,6 @@ async function main() {
       persona: {
         name: "小o",
         style: "test",
-        slang: [],
         doNot: [],
         replyLength: "short",
       },
@@ -1213,6 +1326,24 @@ async function main() {
     assert.equal(history[1].text, "c");
   });
 
+  await runTest("group context session key is shared while runtime session key stays per-user", async () => {
+    const e1 = {
+      scope: "group" as const,
+      groupId: 12345,
+      userId: 1001,
+      text: "a",
+    };
+    const e2 = {
+      scope: "group" as const,
+      groupId: 12345,
+      userId: 1002,
+      text: "b",
+    };
+
+    assert.equal(createContextSessionKey(e1), createContextSessionKey(e2));
+    assert.notEqual(createSessionKey(e1), createSessionKey(e2));
+  });
+
   await runTest("action helpers produce expected payloads", async () => {
     const message = [{ type: "text", data: { text: "hello" } }];
 
@@ -1257,11 +1388,9 @@ async function main() {
     );
 
     const store = new ConfigStore(filePath, {
-      groupEnabled: {},
       cooldownMs: 0,
     });
 
-    assert.equal(store.isGroupEnabled(12345), false);
     assert.equal(store.getCooldownMs(), 777);
 
     const persisted = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
@@ -1269,8 +1398,8 @@ async function main() {
       groupEnabled?: Record<string, boolean>;
       cooldownMs?: number;
     };
-    assert.equal(persisted.version, 1);
-    assert.equal(persisted.groupEnabled?.["12345"], false);
+    assert.equal(persisted.version, 2);
+    assert.equal("groupEnabled" in persisted, false);
     assert.equal(persisted.cooldownMs, 777);
   });
 
