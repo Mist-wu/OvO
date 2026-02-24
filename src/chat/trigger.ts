@@ -1,4 +1,3 @@
-import { clamp01 } from "../utils/helpers";
 import type { MessageSegment } from "../napcat/message";
 import { hasVisualSegments } from "./media";
 import type { ChatEvent, TriggerDecision } from "./types";
@@ -18,49 +17,6 @@ function hasAtSelf(segments: MessageSegment[] | undefined, selfId: number | unde
     }
     return false;
   });
-}
-
-function hasReplySegment(segments: MessageSegment[] | undefined): boolean {
-  if (!Array.isArray(segments)) return false;
-  return segments.some((segment) => segment.type === "reply");
-}
-
-function includesAlias(text: string, aliases: string[]): boolean {
-  if (!text) return false;
-  const normalizedText = text.toLowerCase();
-  return aliases.some((alias) => {
-    const normalizedAlias = alias.trim().toLowerCase();
-    if (!normalizedAlias) return false;
-    return normalizedText.includes(normalizedAlias);
-  });
-}
-
-
-
-function stableRatio(seed: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
-}
-
-function getUserAffinity(userId: number): number {
-  const ratio = stableRatio(`user:${userId}`);
-  return (ratio - 0.5) * 0.35;
-}
-
-function normalizeAffinity(value: number | undefined, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return clamp01((value + 0.35) / 0.7) * 0.7 - 0.35;
-}
-
-function normalizeBoost(value: number | undefined, max: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
-  if (value > max) return max;
-  if (value < -max) return -max;
-  return value;
 }
 
 function isLikelyUnfinishedText(text: string): boolean {
@@ -103,18 +59,15 @@ function getPrivateWaitMs(text: string, hasVisual: boolean): number {
   return isLikelyUnfinishedText(text) ? 800 : 220;
 }
 
-function getGroupWaitMs(text: string): number {
-  return isLikelyUnfinishedText(text) ? 1500 : 850;
-}
-
 export function decideTrigger(
   event: ChatEvent,
-  aliases: string[],
+  _aliases: string[],
   hints?: Partial<TriggerRuntimeHints>,
 ): TriggerDecision {
   const text = event.text.trim();
   const hasVisual = hasVisualSegments(event.segments);
   const hasContent = text.length > 0 || hasVisual;
+  void hints;
 
   if (event.scope === "private") {
     if (!hasContent) {
@@ -145,26 +98,6 @@ export function decideTrigger(
     };
   }
 
-  if (hasReplySegment(event.segments)) {
-    return {
-      shouldReply: true,
-      reason: "replied_to_bot",
-      priority: "must",
-      waitMs: 0,
-      willingness: 1,
-    };
-  }
-
-  if (includesAlias(text, aliases)) {
-    return {
-      shouldReply: true,
-      reason: "named_bot",
-      priority: "must",
-      waitMs: 0,
-      willingness: 1,
-    };
-  }
-
   if (!hasContent) {
     return {
       shouldReply: false,
@@ -175,32 +108,11 @@ export function decideTrigger(
     };
   }
 
-  const topicScore = getTopicScore(text, hasVisual);
-  const baseAffinity = getUserAffinity(event.userId);
-  const userAffinity = normalizeAffinity(hints?.userAffinityBoost, baseAffinity);
-  const topicRelevanceBoost = normalizeBoost(hints?.topicRelevanceBoost, 0.2);
-  const groupHeatBoost = normalizeBoost(hints?.groupHeatBoost, 0.1);
-  const silenceCompensationBoost = normalizeBoost(hints?.silenceCompensationBoost, 0.2);
-  const willingness = clamp01(
-    0.22 + topicScore + userAffinity + topicRelevanceBoost + groupHeatBoost + silenceCompensationBoost,
-  );
-  const threshold = clamp01(0.62 - silenceCompensationBoost * 0.45);
-
-  if (willingness >= threshold) {
-    return {
-      shouldReply: true,
-      reason: "group_willing",
-      priority: willingness >= 0.82 ? "high" : "normal",
-      waitMs: getGroupWaitMs(text),
-      willingness,
-    };
-  }
-
   return {
     shouldReply: false,
     reason: "not_triggered",
     priority: "low",
     waitMs: 0,
-    willingness,
+    willingness: 0,
   };
 }

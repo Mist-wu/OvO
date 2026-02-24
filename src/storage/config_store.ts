@@ -5,26 +5,14 @@ import { logger } from "../utils/logger";
 import { config } from "../config";
 
 export type PersistentConfig = {
-  groupEnabled: Record<string, boolean>;
   cooldownMs: number;
 };
 
-type StoredConfigV1 = PersistentConfig & {
-  version: 1;
+type StoredConfigV2 = PersistentConfig & {
+  version: 2;
 };
 
-const CURRENT_CONFIG_VERSION = 1;
-
-function normalizeGroupEnabled(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== "object") return {};
-  const result: Record<string, boolean> = {};
-  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
-    if (rawValue === true || rawValue === false) {
-      result[String(key)] = rawValue;
-    }
-  }
-  return result;
-}
+const CURRENT_CONFIG_VERSION = 2;
 
 function normalizeCooldown(value: unknown, fallback: number): number {
   if (typeof value !== "number") return fallback;
@@ -34,30 +22,28 @@ function normalizeCooldown(value: unknown, fallback: number): number {
 
 function normalizeConfig(input: Partial<PersistentConfig>, defaults: PersistentConfig): PersistentConfig {
   return {
-    groupEnabled: normalizeGroupEnabled(input.groupEnabled ?? defaults.groupEnabled),
     cooldownMs: normalizeCooldown(input.cooldownMs ?? defaults.cooldownMs, defaults.cooldownMs),
   };
 }
 
-function toStoredConfigV1(input: Partial<PersistentConfig>, defaults: PersistentConfig): StoredConfigV1 {
+function toStoredConfigV2(input: Partial<PersistentConfig>, defaults: PersistentConfig): StoredConfigV2 {
   const normalized = normalizeConfig(input, defaults);
   return {
-    version: 1,
-    groupEnabled: normalized.groupEnabled,
+    version: 2,
     cooldownMs: normalized.cooldownMs,
   };
 }
 
-function migrateConfig(raw: unknown, defaults: PersistentConfig): StoredConfigV1 {
+function migrateConfig(raw: unknown, defaults: PersistentConfig): StoredConfigV2 {
   if (!raw || typeof raw !== "object") {
-    return toStoredConfigV1(defaults, defaults);
+    return toStoredConfigV2(defaults, defaults);
   }
 
   const parsed = raw as Record<string, unknown>;
   const version = parsed.version;
 
   if (version === CURRENT_CONFIG_VERSION) {
-    return toStoredConfigV1(parsed as Partial<PersistentConfig>, defaults);
+    return toStoredConfigV2(parsed as Partial<PersistentConfig>, defaults);
   }
 
   if (typeof version === "number" && version > CURRENT_CONFIG_VERSION) {
@@ -66,42 +52,28 @@ function migrateConfig(raw: unknown, defaults: PersistentConfig): StoredConfigV1
     );
   }
 
-  return toStoredConfigV1(parsed as Partial<PersistentConfig>, defaults);
+  return toStoredConfigV2(parsed as Partial<PersistentConfig>, defaults);
 }
 
 export class ConfigStore {
-  private data: StoredConfigV1;
+  private data: StoredConfigV2;
 
   constructor(
     private readonly filePath: string,
     private readonly defaults: PersistentConfig,
   ) {
-    this.data = toStoredConfigV1(defaults, defaults);
+    this.data = toStoredConfigV2(defaults, defaults);
     this.load();
   }
 
   get snapshot(): PersistentConfig {
     return {
-      groupEnabled: { ...this.data.groupEnabled },
       cooldownMs: this.data.cooldownMs,
     };
   }
 
-  isGroupEnabled(groupId: number): boolean {
-    const key = String(groupId);
-    if (key in this.data.groupEnabled) return this.data.groupEnabled[key];
-    return config.permissions.groupEnabledDefault;
-  }
-
   getCooldownMs(): number {
     return this.data.cooldownMs;
-  }
-
-  setGroupEnabled(groupId: number, enabled: boolean): void {
-    const key = String(groupId);
-    if (this.data.groupEnabled[key] === enabled) return;
-    this.data.groupEnabled = { ...this.data.groupEnabled, [key]: enabled };
-    this.persist();
   }
 
   setCooldownMs(value: number): void {
@@ -130,7 +102,7 @@ export class ConfigStore {
       }
     } catch (error) {
       logger.warn("[config_store] 配置文件读取失败，已回退默认配置:", error);
-      this.data = toStoredConfigV1(this.defaults, this.defaults);
+      this.data = toStoredConfigV2(this.defaults, this.defaults);
       this.persist();
     }
   }
@@ -154,7 +126,6 @@ function resolveConfigPath(): string {
 }
 
 const defaultConfig: PersistentConfig = {
-  groupEnabled: {},
   cooldownMs: config.permissions.cooldownMs,
 };
 

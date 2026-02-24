@@ -50,19 +50,6 @@ function evictCooldownOverflow(): void {
   }
 }
 
-export const groupEnabledMiddleware: CommandMiddleware = async (context, next) => {
-  if (
-    context.messageType === "group" &&
-    typeof context.groupId === "number" &&
-    !configStore.isGroupEnabled(context.groupId) &&
-    !context.command.definition.allowWhenGroupDisabled
-  ) {
-    await context.sendText("本群已关闭");
-    return;
-  }
-  await next();
-};
-
 export const permissionMiddleware: CommandMiddleware = async (context, next) => {
   const access = context.command.definition.access ?? "root";
   if (access === "user") {
@@ -110,7 +97,6 @@ export const cooldownMiddleware: CommandMiddleware = async (context, next) => {
 };
 
 export const defaultCommandMiddlewares: CommandMiddleware[] = [
-  groupEnabledMiddleware,
   permissionMiddleware,
   cooldownMiddleware,
 ];

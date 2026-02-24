@@ -107,7 +107,6 @@ export const config = {
   },
   permissions: {
     rootUserId: optionalNumberFromEnv(process.env.ROOT_USER_ID),
-    groupEnabledDefault: booleanFromEnv(process.env.GROUP_ENABLED_DEFAULT, true),
     cooldownMs: numberFromEnv(process.env.COMMAND_COOLDOWN_MS, 0),
     cooldownMaxKeys: numberFromEnv(process.env.COMMAND_COOLDOWN_MAX_KEYS, 5000),
     cooldownPruneIntervalMs: numberFromEnv(process.env.COMMAND_COOLDOWN_PRUNE_INTERVAL_MS, 60 * 1000),

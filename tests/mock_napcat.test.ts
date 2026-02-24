@@ -305,7 +305,6 @@ async function main() {
   process.env.SCHEDULE_INTERVAL_MS = "600000";
   process.env.BOT_CONFIG_PATH = path.join(tmpDir, "config.json");
   process.env.ROOT_USER_ID = "11111";
-  process.env.GROUP_ENABLED_DEFAULT = "true";
   process.env.COMMAND_COOLDOWN_MS = "0";
   process.env.GEMINI_API_KEY = "";
   process.env.WEATHER_API_KEY = "";
@@ -406,11 +405,11 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
           messageToText(item.params.message) ===
-            "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/group on|off [group_id]\n/cooldown [ms]\n/帮助\n/天气 <城市>",
+            "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/cooldown [ms]\n/帮助\n/天气 <城市>",
       );
       assert.equal(
         messageToText(action.params.message),
-        "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/group on|off [group_id]\n/cooldown [ms]\n/帮助\n/天气 <城市>",
+        "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/cooldown [ms]\n/帮助\n/天气 <城市>",
       );
     });
 
@@ -567,7 +566,7 @@ async function main() {
       assert.equal(formatted.includes("数据更新于: 2026-02-06 23:07:56"), true);
     });
 
-    await runTest("group named-bot message triggers chat fallback", async () => {
+    await runTest("group named-bot message stays silent without @", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "group",
@@ -577,16 +576,19 @@ async function main() {
         message: "小o 在吗",
       });
 
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_group_msg" &&
-          item.params.group_id === 65432 &&
-          messageToText(item.params.message) === "刚卡了",
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) =>
+              item.action === "send_group_msg" &&
+              item.params.group_id === 65432,
+            220,
+          ),
+        /waitForAction timeout/,
       );
-      assert.equal(messageToText(action.params.message), "刚卡了");
     });
 
-    await runTest("group reply message fetches quoted content before chat", async () => {
+    await runTest("group reply message is only read without @", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "group",
@@ -606,16 +608,19 @@ async function main() {
       );
       assert.equal(getMsgAction.action, "get_msg");
 
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_group_msg" &&
-          item.params.group_id === 65435 &&
-          messageToText(item.params.message) === "刚卡了",
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) =>
+              item.action === "send_group_msg" &&
+              item.params.group_id === 65435,
+            220,
+          ),
+        /waitForAction timeout/,
       );
-      assert.equal(messageToText(action.params.message), "刚卡了");
     });
 
-    await runTest("group reply with quoted image and emoji is accepted by chat", async () => {
+    await runTest("group @mention with quoted image and emoji triggers chat", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "group",
@@ -625,9 +630,10 @@ async function main() {
         message_id: 8900,
         message: [
           { type: "reply", data: { id: "imgface001" } },
+          { type: "at", data: { qq: 99999 } },
           { type: "text", data: { text: "小o 这个呢" } },
         ],
-        raw_message: "[CQ:reply,id=imgface001]小o 这个呢",
+        raw_message: "[CQ:reply,id=imgface001][CQ:at,qq=99999]小o 这个呢",
       });
 
       const getMsgAction = await server.waitForAction(
@@ -786,59 +792,6 @@ async function main() {
           messageToText(item.params.message).includes("rootUserId=11111"),
       );
       assert.equal(true, messageToText(action.params.message).includes("cooldownMs="));
-    });
-
-    await runTest("group middleware blocks commands when disabled", async () => {
-      server.sendEvent({
-        post_type: "message",
-        message_type: "group",
-        group_id: 54321,
-        user_id: 11111,
-        self_id: 99999,
-        message: "/group off",
-      });
-
-      const disabled = await server.waitForAction(
-        (item) =>
-          item.action === "send_group_msg" &&
-          item.params.group_id === 54321 &&
-          messageToText(item.params.message) === "已关闭群 54321",
-      );
-      assert.equal(messageToText(disabled.params.message), "已关闭群 54321");
-
-      server.sendEvent({
-        post_type: "message",
-        message_type: "group",
-        group_id: 54321,
-        user_id: 22222,
-        self_id: 99999,
-        message: "/ping",
-      });
-
-      const blocked = await server.waitForAction(
-        (item) =>
-          item.action === "send_group_msg" &&
-          item.params.group_id === 54321 &&
-          messageToText(item.params.message) === "本群已关闭",
-      );
-      assert.equal(messageToText(blocked.params.message), "本群已关闭");
-
-      server.sendEvent({
-        post_type: "message",
-        message_type: "group",
-        group_id: 54321,
-        user_id: 11111,
-        self_id: 99999,
-        message: "/group on",
-      });
-
-      const enabled = await server.waitForAction(
-        (item) =>
-          item.action === "send_group_msg" &&
-          item.params.group_id === 54321 &&
-          messageToText(item.params.message) === "已开启群 54321",
-      );
-      assert.equal(messageToText(enabled.params.message), "已开启群 54321");
     });
 
     await runTest("cooldown middleware limits repeated commands", async () => {
