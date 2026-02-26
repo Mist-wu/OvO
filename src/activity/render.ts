@@ -531,7 +531,7 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
     font: 'bold 34px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
     color: "#4a47d6",
   });
-  drawText(ctx, result.scope === "group" ? `群签到 #${result.scopeId}` : "私聊签到", width - 100, 243, {
+  drawText(ctx, `获得积分 +${result.rewardPoints}`, width - 100, 243, {
     font: '24px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
     color: "#7f7fb0",
     align: "right",
@@ -539,7 +539,7 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
 
   const boxes = [
     { x: 70, y: 315, w: 250, title: "连续签到", value: `${result.streakDays} 天` },
-    { x: 365, y: 315, w: 250, title: "累计签到", value: `${result.totalDays} 天` },
+    { x: 365, y: 315, w: 250, title: "累计积分", value: `${result.totalPoints} 分` },
     { x: 660, y: 315, w: 250, title: "今日序号", value: `第 ${result.seqToday} 签` },
   ];
 
@@ -569,5 +569,4 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
 
   return writeCardBuffer(canvas.toBuffer("image/png"), "sign_in");
 }
-
 

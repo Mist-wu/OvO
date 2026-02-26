@@ -37,6 +37,7 @@ type SignInUserRecord = {
   totalDays: number;
   streakDays: number;
   lastDateKey: string;
+  totalPoints: number;
 };
 
 type SignInDayBucket = {
@@ -49,9 +50,20 @@ type GroupSignInBucket = {
   days: Record<string, SignInDayBucket>;
 };
 
+type GlobalSignInDayBucket = {
+  users: Record<string, { userName: string; signedAt: number; seq: number; rewardPoints: number }>;
+  count: number;
+};
+
+type SignInGlobalBucket = {
+  profiles: Record<string, SignInUserRecord>;
+  days: Record<string, GlobalSignInDayBucket>;
+};
+
 type SignInScopeBucket = {
   groups: Record<string, GroupSignInBucket>;
   privates: Record<string, GroupSignInBucket>;
+  global: SignInGlobalBucket;
 };
 
 type ActivityStoreData = {
@@ -98,12 +110,15 @@ export type SignInResult = {
   todayTotal: number;
   totalDays: number;
   streakDays: number;
+  totalPoints: number;
+  rewardPoints: number;
 };
 
 const CURRENT_VERSION = 1;
 const STORE_PATH = path.resolve(process.cwd(), "data/activity_stats.json");
 const EMOJI_ASSET_DIR = path.resolve(process.cwd(), "data/emoji_assets");
 const MAX_DAILY_BUCKETS = 35;
+const emojiHttpDownloadTasks: Map<string, Promise<string | undefined>> = new Map();
 
 function createEmptyData(): ActivityStoreData {
   return {
@@ -112,6 +127,10 @@ function createEmptyData(): ActivityStoreData {
     signIn: {
       groups: {},
       privates: {},
+      global: {
+        profiles: {},
+        days: {},
+      },
     },
   };
 }
@@ -189,6 +208,38 @@ function getOrCreateSignInDayBucket(group: GroupSignInBucket, dateKey: string): 
     };
   }
   return group.days[dateKey]!;
+}
+
+function getOrCreateGlobalSignInBucket(data: ActivityStoreData): SignInGlobalBucket {
+  if (!data.signIn.global) {
+    data.signIn.global = { profiles: {}, days: {} };
+  }
+  return data.signIn.global;
+}
+
+function getOrCreateGlobalSignInDayBucket(bucket: SignInGlobalBucket, dateKey: string): GlobalSignInDayBucket {
+  if (!bucket.days[dateKey]) {
+    bucket.days[dateKey] = {
+      users: {},
+      count: 0,
+    };
+  }
+  return bucket.days[dateKey]!;
+}
+
+function randomSignInRewardPoints(): number {
+  return crypto.randomInt(10, 21);
+}
+
+function normalizeSignInProfile(input: Partial<SignInUserRecord> | undefined, userId: number, userName: string): SignInUserRecord {
+  return {
+    userId,
+    userName,
+    totalDays: typeof input?.totalDays === "number" && Number.isFinite(input.totalDays) ? Math.max(0, Math.floor(input.totalDays)) : 0,
+    streakDays: typeof input?.streakDays === "number" && Number.isFinite(input.streakDays) ? Math.max(0, Math.floor(input.streakDays)) : 0,
+    lastDateKey: typeof input?.lastDateKey === "string" ? input.lastDateKey : "",
+    totalPoints: typeof input?.totalPoints === "number" && Number.isFinite(input.totalPoints) ? Math.max(0, Math.floor(input.totalPoints)) : 0,
+  };
 }
 
 function incrementUserCounter(
@@ -317,7 +368,14 @@ function persistImageAsset(source: string): { key: string; assetRef?: string; la
   }
 
   if (isHttpUrl(source)) {
-    const hash = sha1(source);
+    const hash = sha1(normalizeHttpIdentityUrl(source));
+    const cachedLocal = findCachedHttpEmojiAsset(source);
+    if (cachedLocal) {
+      return { key: `img:${hash}`, assetRef: cachedLocal, label: "表情包" };
+    }
+    void downloadHttpEmojiAssetToLocal(source).catch((error) => {
+      logger.debug("[activity] 表情包HTTP缓存下载失败:", error);
+    });
     return { key: `img:${hash}`, assetRef: source, label: "表情包" };
   }
 
@@ -342,12 +400,82 @@ function extractImageSource(segment: MessageSegment): string {
 function normalizeHttpIdentityUrl(source: string): string {
   try {
     const url = new URL(source);
-    url.search = "";
     url.hash = "";
+
+    // NTQQ 多媒体下载链接的真实身份在 fileid/appid，rkey 等参数是临时签名
+    const fileId = url.searchParams.get("fileid");
+    if (fileId) {
+      const normalized = new URL(`${url.origin}${url.pathname}`);
+      const appId = url.searchParams.get("appid");
+      if (appId) normalized.searchParams.set("appid", appId);
+      normalized.searchParams.set("fileid", fileId);
+      return normalized.toString();
+    }
+
+    const volatileKeys = new Set([
+      "rkey", "sig", "signature", "token", "auth", "authkey",
+      "expires", "expire", "exp", "ts", "timestamp", "t",
+    ]);
+    const kept = Array.from(url.searchParams.entries())
+      .filter(([key]) => !volatileKeys.has(key.toLowerCase()))
+      .sort(([ka, va], [kb, vb]) => (ka === kb ? va.localeCompare(vb) : ka.localeCompare(kb)));
+
+    url.search = "";
+    for (const [key, value] of kept) {
+      url.searchParams.append(key, value);
+    }
     return url.toString();
   } catch {
     return source.split("?")[0]?.split("#")[0] ?? source;
   }
+}
+
+function findCachedHttpEmojiAsset(source: string): string | undefined {
+  ensureDir(EMOJI_ASSET_DIR);
+  const normalized = normalizeHttpIdentityUrl(source);
+  const hash = sha1(normalized);
+  try {
+    const file = fs.readdirSync(EMOJI_ASSET_DIR).find((name) => name.startsWith(`${hash}.`));
+    return file ? path.join(EMOJI_ASSET_DIR, file) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function downloadHttpEmojiAssetToLocal(source: string): Promise<string | undefined> {
+  if (!isHttpUrl(source)) return undefined;
+
+  const existing = findCachedHttpEmojiAsset(source);
+  if (existing) return existing;
+
+  const normalized = normalizeHttpIdentityUrl(source);
+  const taskKey = sha1(normalized);
+  const running = emojiHttpDownloadTasks.get(taskKey);
+  if (running) return running;
+
+  const task = (async () => {
+    try {
+      ensureDir(EMOJI_ASSET_DIR);
+      const response = await fetch(source);
+      if (!response.ok) return undefined;
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length <= 0) return undefined;
+      const contentType = response.headers.get("content-type") ?? "";
+      const ext = contentType ? extByMime(contentType) : inferExtFromSource(source);
+      const filePath = path.join(EMOJI_ASSET_DIR, `${taskKey}${ext}`);
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, buffer);
+      }
+      return filePath;
+    } catch {
+      return undefined;
+    } finally {
+      emojiHttpDownloadTasks.delete(taskKey);
+    }
+  })();
+
+  emojiHttpDownloadTasks.set(taskKey, task);
+  return task;
 }
 
 function normalizeEmojiDataValue(value: unknown): unknown {
@@ -476,6 +604,13 @@ export class ActivityStore {
     this.load();
   }
 
+  async ensureEmojiAssetLocal(assetRef?: string): Promise<string | undefined> {
+    if (!assetRef) return undefined;
+    if (!isHttpUrl(assetRef)) return assetRef;
+    return (await downloadHttpEmojiAssetToLocal(assetRef)) ?? assetRef;
+  }
+
+
   recordMessage(input: {
     scope: "group" | "private";
     groupId?: number;
@@ -578,8 +713,25 @@ export class ActivityStore {
   getTodayTopEmojis(groupId: number, now = Date.now(), limit = 3): TopEmojiItem[] {
     const dateKey = formatDateKeyCN(now);
     const groupStats = this.data.daily[dateKey]?.groups?.[String(groupId)];
-    const emojis = Object.values(groupStats?.emojis ?? {});
-    const sorted = emojis.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    const merged = new Map<string, EmojiCounter>();
+    for (const item of Object.values(groupStats?.emojis ?? {})) {
+      let mergeKey = item.key;
+      if (item.kind === "image" && item.assetRef) {
+        mergeKey = isHttpUrl(item.assetRef)
+          ? `img:merged:${normalizeHttpIdentityUrl(item.assetRef)}`
+          : `img:merged:${item.assetRef}`;
+      }
+      const current = merged.get(mergeKey);
+      if (!current) {
+        merged.set(mergeKey, { ...item });
+        continue;
+      }
+      current.count += item.count;
+      if (!current.assetRef && item.assetRef) current.assetRef = item.assetRef;
+      if ((!current.label || current.label === "表情包") && item.label) current.label = item.label;
+    }
+
+    const sorted = Array.from(merged.values()).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
     const preferred = sorted.filter((item) => item.kind === "image");
     const fallback = sorted.filter((item) => item.kind !== "image");
     const picked = [...preferred, ...fallback].slice(0, Math.max(0, Math.floor(limit)));
@@ -601,23 +753,22 @@ export class ActivityStore {
   }): SignInResult {
     const now = typeof input.now === "number" ? input.now : Date.now();
     const dateKey = formatDateKeyCN(now);
-    const bucket = getOrCreateSignInGroupBucket(this.data, input.scope, input.scopeId);
-    const dayBucket = getOrCreateSignInDayBucket(bucket, dateKey);
     const userKey = String(input.userId);
     const userName = normalizeUserName(input.userName, input.userId);
 
-    const existingToday = dayBucket.users[userKey];
-    const profile = bucket.profiles[userKey] ?? {
-      userId: input.userId,
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const globalDayBucket = getOrCreateGlobalSignInDayBucket(globalBucket, dateKey);
+    const existingToday = globalDayBucket.users[userKey];
+
+    const profile = normalizeSignInProfile(
+      globalBucket.profiles[userKey] as Partial<SignInUserRecord> | undefined,
+      input.userId,
       userName,
-      totalDays: 0,
-      streakDays: 0,
-      lastDateKey: "",
-    };
+    );
     profile.userName = userName;
+    globalBucket.profiles[userKey] = profile;
 
     if (existingToday) {
-      bucket.profiles[userKey] = profile;
       this.persist();
       return {
         scope: input.scope,
@@ -628,27 +779,32 @@ export class ActivityStore {
         signedAtMs: existingToday.signedAt,
         status: "already_signed",
         seqToday: existingToday.seq,
-        todayTotal: dayBucket.count,
+        todayTotal: globalDayBucket.count,
         totalDays: profile.totalDays,
         streakDays: profile.streakDays,
+        totalPoints: profile.totalPoints,
+        rewardPoints: 0,
       };
     }
 
+    const rewardPoints = randomSignInRewardPoints();
     profile.totalDays += 1;
     profile.streakDays = profile.lastDateKey && isNextDate(profile.lastDateKey, dateKey)
       ? profile.streakDays + 1
       : 1;
     profile.lastDateKey = dateKey;
-    bucket.profiles[userKey] = profile;
+    profile.totalPoints += rewardPoints;
+    globalBucket.profiles[userKey] = profile;
 
-    dayBucket.count += 1;
-    dayBucket.users[userKey] = {
+    globalDayBucket.count += 1;
+    globalDayBucket.users[userKey] = {
       userName,
       signedAt: now,
-      seq: dayBucket.count,
+      seq: globalDayBucket.count,
+      rewardPoints,
     };
 
-    this.pruneOldSignInDays(bucket);
+    this.pruneOldGlobalSignInDays(globalBucket);
     this.persist();
 
     return {
@@ -659,10 +815,12 @@ export class ActivityStore {
       dateKey,
       signedAtMs: now,
       status: "signed",
-      seqToday: dayBucket.count,
-      todayTotal: dayBucket.count,
+      seqToday: globalDayBucket.count,
+      todayTotal: globalDayBucket.count,
       totalDays: profile.totalDays,
       streakDays: profile.streakDays,
+      totalPoints: profile.totalPoints,
+      rewardPoints,
     };
   }
 
@@ -709,6 +867,14 @@ export class ActivityStore {
     }
   }
 
+  private pruneOldGlobalSignInDays(bucket: SignInGlobalBucket): void {
+    const keys = Object.keys(bucket.days).sort();
+    if (keys.length <= MAX_DAILY_BUCKETS) return;
+    for (const key of keys.slice(0, keys.length - MAX_DAILY_BUCKETS)) {
+      delete bucket.days[key];
+    }
+  }
+
   private load(): void {
     if (!fs.existsSync(this.filePath)) {
       this.data = createEmptyData();
@@ -722,10 +888,13 @@ export class ActivityStore {
       this.data = {
         version: CURRENT_VERSION,
         daily: normalizeRecord(record.daily, {}),
-        signIn: normalizeRecord(record.signIn, { groups: {}, privates: {} }),
+        signIn: normalizeRecord(record.signIn, { groups: {}, privates: {}, global: { profiles: {}, days: {} } }),
       };
       if (!this.data.signIn.groups) this.data.signIn.groups = {};
       if (!this.data.signIn.privates) this.data.signIn.privates = {};
+      if (!(this.data.signIn as { global?: SignInGlobalBucket }).global) {
+        (this.data.signIn as { global: SignInGlobalBucket }).global = { profiles: {}, days: {} };
+      }
       this.pruneOldDailyBuckets();
       this.persist();
     } catch (error) {
