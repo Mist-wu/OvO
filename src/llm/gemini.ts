@@ -8,6 +8,11 @@ export type GeminiInlineImage = {
   dataBase64: string;
 };
 
+export type GeminiGeneratedImage = {
+  mimeType: string;
+  dataBase64: string;
+};
+
 function normalizeBaseUrl(input: string): string | undefined {
   const trimmed = input.trim();
   if (!trimmed) return undefined;
@@ -34,6 +39,10 @@ export function getGeminiModel(): string {
   return config.llm.gemini.model;
 }
 
+export function getGeminiImageModel(): string {
+  return config.llm.gemini.imageModel;
+}
+
 export function getGeminiSetupSummary(): string {
   const configured = config.llm.gemini.apiKey.trim().length > 0;
   return `llm=gemini model=${config.llm.gemini.model} configured=${configured}`;
@@ -44,6 +53,74 @@ export async function askGemini(prompt: string): Promise<string> {
     prompt,
     inlineImages: [],
   });
+}
+
+export async function generateGeminiImage(prompt: string): Promise<GeminiGeneratedImage> {
+  return generateGeminiImageWithInputs({ prompt, inlineImages: [] });
+}
+
+export async function generateGeminiImageWithInputs(input: {
+  prompt: string;
+  inlineImages?: GeminiInlineImage[];
+}): Promise<GeminiGeneratedImage> {
+  const normalizedPrompt = input.prompt.trim();
+  if (!normalizedPrompt) {
+    throw new Error("[llm] image prompt is required");
+  }
+  const inlineImages = Array.isArray(input.inlineImages)
+    ? input.inlineImages.filter((item) => Boolean(item?.mimeType && item?.dataBase64))
+    : [];
+
+  return runExternalCall(
+    {
+      service: "gemini",
+      operation: "generate_image",
+      timeoutMs: config.llm.gemini.imageTimeoutMs,
+      retries: config.external.gemini.retries,
+      retryDelayMs: config.external.gemini.retryDelayMs,
+      concurrency: config.external.gemini.concurrency,
+      circuitBreaker: {
+        enabled: config.external.circuitBreakerEnabled,
+        key: "gemini:image",
+        failureThreshold: config.external.circuitFailureThreshold,
+        openMs: config.external.circuitOpenMs,
+      },
+      fallback: (error) => {
+        throw error;
+      },
+    },
+    async () => {
+      const client = createGeminiSdkClient();
+      const interaction = await client.interactions.create({
+        model: getGeminiImageModel(),
+        input:
+          inlineImages.length > 0
+            ? [
+                { type: "text", text: normalizedPrompt },
+                ...inlineImages.map((item) => ({
+                  type: "image" as const,
+                  data: item.dataBase64,
+                  mime_type: item.mimeType,
+                })),
+              ]
+            : normalizedPrompt,
+        response_modalities: ["image"],
+      });
+
+      const outputs = Array.isArray(interaction.outputs) ? interaction.outputs : [];
+      for (const output of outputs) {
+        if (output?.type !== "image") continue;
+        const dataBase64 = typeof output.data === "string" ? output.data.trim() : "";
+        if (!dataBase64) continue;
+        const mimeType = typeof output.mime_type === "string" && output.mime_type.trim()
+          ? output.mime_type.trim()
+          : "image/png";
+        return { mimeType, dataBase64 };
+      }
+
+      throw new Error("[llm] Gemini 未返回图片");
+    },
+  );
 }
 
 export async function askGeminiWithImages(input: {
