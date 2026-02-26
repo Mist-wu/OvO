@@ -199,11 +199,12 @@ function getChatVisibleText(event: MessageEvent): string {
     const summary = summarizeSegments(event.message, {
       skipReply: true,
       includeForwardPlaceholder: true,
+      selfId: event.self_id,
     });
     if (summary) return summary;
   }
   if (typeof event.raw_message === "string" && event.raw_message.trim()) {
-    return parseRawCqMessage(event.raw_message.trim()).summary || event.raw_message.trim();
+    return parseRawCqMessage(event.raw_message.trim(), { selfId: event.self_id }).summary || event.raw_message.trim();
   }
   if (typeof event.message === "string" && event.message.trim()) {
     return event.message.trim();
@@ -266,6 +267,24 @@ function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function formatAtSummary(
+  qq: unknown,
+  options?: { selfId?: number | string },
+): string {
+  if (qq === "all") return "@全体成员";
+  if (typeof qq !== "number" && typeof qq !== "string") return "@用户";
+  const qqText = String(qq).trim();
+  if (!qqText) return "@用户";
+  const selfIdText =
+    typeof options?.selfId === "number" || typeof options?.selfId === "string"
+      ? String(options.selfId)
+      : "";
+  if (selfIdText && qqText === selfIdText) {
+    return "@我";
+  }
+  return `@${qqText}`;
+}
+
 function parseCqParams(raw: string | undefined): Record<string, string> {
   if (!raw) return {};
   const result: Record<string, string> = {};
@@ -277,7 +296,7 @@ function parseCqParams(raw: string | undefined): Record<string, string> {
   return result;
 }
 
-function parseRawCqMessage(raw: string): { summary: string; segments: MessageSegment[] } {
+function parseRawCqMessage(raw: string, options?: { selfId?: number | string }): { summary: string; segments: MessageSegment[] } {
   const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]+))?\]/g;
   const summaryParts: string[] = [];
   const segments: MessageSegment[] = [];
@@ -319,7 +338,7 @@ function parseRawCqMessage(raw: string): { summary: string; segments: MessageSeg
         summaryParts.push("[表情]");
         break;
       case "at":
-        summaryParts.push(params.qq ? `@${params.qq}` : "@用户");
+        summaryParts.push(formatAtSummary(params.qq, options));
         break;
       case "reply":
         break;
@@ -350,7 +369,7 @@ function summarizeQuotedSegments(segments: MessageSegment[]): string {
 
 function summarizeSegments(
   segments: MessageSegment[],
-  options?: { skipReply?: boolean; includeForwardPlaceholder?: boolean },
+  options?: { skipReply?: boolean; includeForwardPlaceholder?: boolean; selfId?: number | string },
 ): string {
   const parts: string[] = [];
   for (const segment of segments) {
@@ -373,10 +392,7 @@ function summarizeSegments(
     }
 
     if (segment.type === "at") {
-      const qq = segment.data?.qq;
-      parts.push(
-        typeof qq === "number" || typeof qq === "string" ? `@${String(qq)}` : "@用户",
-      );
+      parts.push(formatAtSummary(segment.data?.qq, { selfId: options?.selfId }));
       continue;
     }
 
@@ -629,3 +645,5 @@ function toChatEvent(
     quotedMessage,
   };
 }
+
+

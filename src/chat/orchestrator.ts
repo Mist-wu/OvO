@@ -104,6 +104,7 @@ function buildMinimalPrompt(event: ChatEvent, _mediaCount: number): string {
   return [
     "你是一个AI助手。",
     "请使用纯文本回复，尽量少用Markdown格式。",
+    event.senderName ? `发送者：${event.senderName}` : "",
     quoted,
     `用户消息：${userText}`,
   ]
@@ -122,6 +123,4 @@ function summarizeUserMessage(text: string, mediaCount: number): string {
 export function createChatOrchestrator(): ChatOrchestrator {
   return new MinimalChatOrchestrator();
 }
-
-
 

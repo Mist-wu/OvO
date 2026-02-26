@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
 import { activityStore, renderEmojiStatsCard, renderTalkStatsCard, type TopEmojiItem } from "../../../activity";
@@ -86,6 +87,37 @@ function parseFaceIdFromTopEmoji(item: TopEmojiItem): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function isLikelyLocalImageRef(value: string): boolean {
+  if (!value) return false;
+  if (value.startsWith("file://") || value.startsWith("data:") || value.startsWith("base64://")) return true;
+  if (/^[a-zA-Z]:\\/.test(value)) return true;
+  if (value.startsWith("/") || value.startsWith("./") || value.startsWith("../")) return true;
+  return false;
+}
+
+function canEmbedEmojiImage(assetRef: string | undefined): boolean {
+  if (!assetRef) return false;
+  if (!isLikelyLocalImageRef(assetRef)) return false;
+  if (assetRef.startsWith("data:") || assetRef.startsWith("base64://") || assetRef.startsWith("file://")) return true;
+  try {
+    return fs.existsSync(assetRef);
+  } catch {
+    return false;
+  }
+}
+
+function buildEmojiTop3Text(top3: TopEmojiItem[]): string {
+  if (top3.length <= 0) {
+    return "今日最受欢迎表情包TOP3：\n今天还没有表情包/表情使用记录";
+  }
+  const lines = ["今日最受欢迎表情包TOP3："];
+  for (const [index, item] of top3.slice(0, 3).entries()) {
+    const name = item.kind === "image" ? "表情包" : item.label;
+    lines.push(`${index + 1}. ${name} 使用次数：${item.count}次`);
+  }
+  return lines.join("\n");
+}
+
 function buildEmojiStatsMixedMessageParts(imageFile: string, top3: TopEmojiItem[]): MessageInput[] {
   const parts: MessageInput[] = [imageSegment(imageFile)];
   parts.push(textSegment("\n今日最受欢迎表情包TOP3：\n"));
@@ -98,9 +130,13 @@ function buildEmojiStatsMixedMessageParts(imageFile: string, top3: TopEmojiItem[
   for (const [index, item] of top3.slice(0, 3).entries()) {
     parts.push(textSegment(`\n${index + 1}. 使用次数：${item.count}次\n`));
 
-    if (item.kind === "image" && item.assetRef) {
-      parts.push(imageSegment(item.assetRef));
-      parts.push(textSegment("\n"));
+    if (item.kind === "image") {
+      if (canEmbedEmojiImage(item.assetRef)) {
+        parts.push(imageSegment(item.assetRef!));
+        parts.push(textSegment("\n"));
+      } else {
+        parts.push(textSegment("表情包（图片链接已失效或不可发送）\n"));
+      }
       continue;
     }
 
@@ -209,13 +245,24 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         }
 
         const stats = activityStore.getTodayEmojiStats(groupId);
-        const top3 = activityStore.getTodayTopEmojis(groupId, Date.now(), 3);
+        const top3Raw = activityStore.getTodayTopEmojis(groupId, Date.now(), 3);
+        const top3 = await Promise.all(top3Raw.map(async (item) => {
+          if (item.kind !== "image" || !item.assetRef) return item;
+          const localAsset = await activityStore.ensureEmojiAssetLocal(item.assetRef);
+          return { ...item, assetRef: localAsset ?? item.assetRef };
+        }));
         const imageFile = await renderEmojiStatsCard(stats);
         const message = buildMessage(...buildEmojiStatsMixedMessageParts(imageFile, top3));
-        if (context.messageType === "group" && typeof context.groupId === "number") {
-          await context.client.sendMessage({ groupId: context.groupId, message });
-        } else {
-          await context.client.sendMessage({ userId: context.userId, message });
+        try {
+          if (context.messageType === "group" && typeof context.groupId === "number") {
+            await context.client.sendMessage({ groupId: context.groupId, message });
+          } else {
+            await context.client.sendMessage({ userId: context.userId, message });
+          }
+        } catch (error) {
+          logger.warn("[activity] 表情统计混合消息发送失败，降级为图+文字:", error);
+          await sendContextImage(context, imageFile);
+          await sendContextTextMessage(context, buildEmojiTop3Text(top3));
         }
       },
     }),
@@ -240,14 +287,17 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       async execute(context) {
         const runtime = context.client.getRuntimeStatus();
         const lastPongAgeMs = Math.max(0, Date.now() - runtime.lastPongAt);
-        await context.sendText(
-          `connected=${runtime.connected} reconnecting=${runtime.reconnecting} ` +
-          `inflight=${runtime.inFlightActions} queued=${runtime.queuedActions} ` +
-          `pending=${runtime.pendingActions} pong_age_ms=${lastPongAgeMs} ` +
-          `queue_overflow_count=${runtime.queueOverflowCount} ` +
-          `retry_count=${runtime.retryCount} ` +
+        await context.sendText([
+          `connected=${runtime.connected}`,
+          `reconnecting=${runtime.reconnecting}`,
+          `inflight=${runtime.inFlightActions}`,
+          `queued=${runtime.queuedActions}`,
+          `pending=${runtime.pendingActions}`,
+          `pong_age_ms=${lastPongAgeMs}`,
+          `queue_overflow_count=${runtime.queueOverflowCount}`,
+          `retry_count=${runtime.retryCount}`,
           `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
-        );
+        ].join("\n"));
       },
     }),
     defineCommand({
@@ -263,12 +313,14 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           typeof config.permissions.rootUserId === "number"
             ? String(config.permissions.rootUserId)
             : "(unset)";
-        await context.sendText(
-          `rootUserId=${rootUserId} cooldownMs=${snapshot.cooldownMs} ` +
-          `groupReplyMode=@only proactiveGroupReply=false ` +
-          `autoApproveGroup=${config.requests.autoApproveGroup} ` +
+        await context.sendText([
+          `rootUserId=${rootUserId}`,
+          `cooldownMs=${snapshot.cooldownMs}`,
+          `groupReplyMode=@only`,
+          `proactiveGroupReply=false`,
+          `autoApproveGroup=${config.requests.autoApproveGroup}`,
           `autoApproveFriend=${config.requests.autoApproveFriend}`,
-        );
+        ].join("\n"));
       },
     }),
     defineCommand({
