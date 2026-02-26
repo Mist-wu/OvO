@@ -1,6 +1,8 @@
 import { logger } from "../../../utils/logger";
+import { activityStore, renderSignInCard } from "../../../activity";
 import { fetchWeatherSummary } from "../../../utils/weather";
-import type { CommandDefinition } from "../types";
+import { buildMessage, image as imageSegment } from "../../message";
+import type { CommandDefinition, CommandExecutionContext } from "../types";
 
 type EmptyPayload = Record<string, never>;
 type HelpScope = "root" | "user";
@@ -12,6 +14,18 @@ function defineCommand<Payload>(
   definition: CommandDefinition<Payload>,
 ): CommandDefinition<unknown> {
   return definition as CommandDefinition<unknown>;
+}
+
+async function sendContextImage(
+  context: CommandExecutionContext,
+  imageFile: string,
+): Promise<void> {
+  const message = buildMessage(imageSegment(imageFile));
+  if (context.messageType === "group" && typeof context.groupId === "number") {
+    await context.client.sendMessage({ groupId: context.groupId, message });
+    return;
+  }
+  await context.client.sendMessage({ userId: context.userId, message });
 }
 
 export function createUserCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {
@@ -26,6 +40,30 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
       },
       async execute(context) {
         await context.sendText(getHelpText("user"));
+      },
+    }),
+    defineCommand({
+      name: "sign_in",
+      access: "user",
+      help: "/签到",
+      cooldownExempt: true,
+      parse(message) {
+        return message.trim() === "/签到" ? emptyPayload : null;
+      },
+      async execute(context) {
+        const isGroup = context.messageType === "group" && typeof context.groupId === "number";
+        const result = activityStore.signIn({
+          scope: isGroup ? "group" : "private",
+          scopeId: isGroup ? context.groupId! : context.userId,
+          userId: context.userId,
+          userName: getSenderNameFromEvent(context.event),
+          now:
+            typeof context.event.time === "number" && Number.isFinite(context.event.time) && context.event.time > 0
+              ? Math.floor(context.event.time * 1000)
+              : Date.now(),
+        });
+        const imageFile = await renderSignInCard(result);
+        await sendContextImage(context, imageFile);
       },
     }),
     defineCommand({
@@ -59,4 +97,14 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
       },
     }),
   ];
+}
+
+function getSenderNameFromEvent(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  const sender = (event as { sender?: unknown }).sender;
+  if (!sender || typeof sender !== "object") return undefined;
+  const record = sender as { card?: unknown; nickname?: unknown };
+  if (typeof record.card === "string" && record.card.trim()) return record.card.trim();
+  if (typeof record.nickname === "string" && record.nickname.trim()) return record.nickname.trim();
+  return undefined;
 }

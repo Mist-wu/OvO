@@ -1,10 +1,10 @@
 import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
+import { activityStore, renderEmojiStatsCard, renderTalkStatsCard, type TopEmojiItem } from "../../../activity";
 import { askGemini } from "../../../llm";
-import { compactSessionMemoryWithLlm, compactUserMemoryWithLlm } from "../../../chat/memory_compactor";
-import { runtimeSkills } from "../../../skills/runtime";
 import { configStore } from "../../../storage/config_store";
-import type { CommandDefinition } from "../types";
+import { buildMessage, face as faceSegment, image as imageSegment, text as textSegment, type MessageInput } from "../../message";
+import type { CommandDefinition, CommandExecutionContext } from "../types";
 
 type EmptyPayload = Record<string, never>;
 type HelpScope = "root" | "user";
@@ -30,6 +30,91 @@ function parseNumber(value: string, allowZero = false): number | null {
     return parsed;
   }
   return parsed > 0 ? parsed : null;
+}
+
+function parseOptionalGroupIdFromPayload(payload: unknown): number | undefined {
+  const groupId = (payload as { groupId?: number | undefined })?.groupId;
+  return typeof groupId === "number" && Number.isFinite(groupId) ? groupId : undefined;
+}
+
+function resolveStatsGroupId(
+  context: { groupId?: number; messageType?: string },
+  payload: unknown,
+): number | null {
+  const payloadGroupId = parseOptionalGroupIdFromPayload(payload);
+  if (typeof payloadGroupId === "number") return payloadGroupId;
+  if (context.messageType === "group" && typeof context.groupId === "number") {
+    return context.groupId;
+  }
+  return null;
+}
+
+async function sendContextImage(
+  context: CommandExecutionContext,
+  imageFile: string,
+  caption?: string,
+): Promise<void> {
+  const message = caption
+    ? buildMessage(imageSegment(imageFile), textSegment(`\n${caption}`))
+    : buildMessage(imageSegment(imageFile));
+
+  if (context.messageType === "group" && typeof context.groupId === "number") {
+    await context.client.sendMessage({ groupId: context.groupId, message });
+    return;
+  }
+
+  await context.client.sendMessage({ userId: context.userId, message });
+}
+
+async function sendContextTextMessage(
+  context: CommandExecutionContext,
+  text: string,
+): Promise<void> {
+  if (context.messageType === "group" && typeof context.groupId === "number") {
+    await context.client.sendMessage({ groupId: context.groupId, message: buildMessage(textSegment(text)) });
+    return;
+  }
+  await context.client.sendMessage({ userId: context.userId, message: buildMessage(textSegment(text)) });
+}
+
+function parseFaceIdFromTopEmoji(item: TopEmojiItem): number | undefined {
+  if (item.kind !== "face") return undefined;
+  const matched = item.key.match(/^face:(?:id|face_id|emoji_id):(?<id>\d+)$/);
+  const id = matched?.groups?.id;
+  if (!id) return undefined;
+  const parsed = Number(id);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildEmojiStatsMixedMessageParts(imageFile: string, top3: TopEmojiItem[]): MessageInput[] {
+  const parts: MessageInput[] = [imageSegment(imageFile)];
+  parts.push(textSegment("\n今日最受欢迎表情包TOP3：\n"));
+
+  if (top3.length <= 0) {
+    parts.push(textSegment("今天还没有表情包/表情使用记录"));
+    return parts;
+  }
+
+  for (const [index, item] of top3.slice(0, 3).entries()) {
+    parts.push(textSegment(`\n${index + 1}. 使用次数：${item.count}次\n`));
+
+    if (item.kind === "image" && item.assetRef) {
+      parts.push(imageSegment(item.assetRef));
+      parts.push(textSegment("\n"));
+      continue;
+    }
+
+    const faceId = parseFaceIdFromTopEmoji(item);
+    if (faceId !== undefined) {
+      parts.push(faceSegment(faceId));
+      parts.push(textSegment(` ${item.label}\n`));
+      continue;
+    }
+
+    parts.push(textSegment(`${item.label}\n`));
+  }
+
+  return parts;
 }
 
 export function createRootCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {
@@ -87,63 +172,50 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
     }),
     defineCommand({
-      name: "memory_compact",
-      help: "/记忆压缩 <user 用户ID | session 会话Key>",
+      name: "talk_stats",
+      help: "/发言统计 [群号]",
       cooldownExempt: true,
       parse(message) {
-        const parts = splitParts(message);
-        const command = parts[0];
-        if (command !== "/记忆压缩" && command !== "/memory_compact") return null;
-        if (parts.length < 3) return { kind: "invalid" as const };
-        const kind = parts[1]?.toLowerCase();
-        if (kind === "user") {
-          const userId = parseNumber(parts[2]);
-          if (userId === null) return { kind: "invalid" as const };
-          return { kind: "user" as const, userId };
-        }
-        if (kind === "session") {
-          const sessionKey = parts.slice(2).join(" ").trim();
-          if (!sessionKey) return { kind: "invalid" as const };
-          return { kind: "session" as const, sessionKey };
-        }
-        return { kind: "invalid" as const };
+        const matched = message.trim().match(/^\/发言统计(?:\s+(\d+))?$/);
+        if (!matched) return null;
+        return { groupId: matched[1] ? Number(matched[1]) : undefined };
       },
       async execute(context, payload) {
-        const parsed = payload as
-          | { kind: "invalid" }
-          | { kind: "user"; userId: number }
-          | { kind: "session"; sessionKey: string };
-        if (parsed.kind === "invalid") {
-          await context.sendText("用法：/记忆压缩 <user 用户ID | session 会话Key>");
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /发言统计，或私聊发送 /发言统计 <群号>");
           return;
         }
 
-        await context.sendText(
-          parsed.kind === "user"
-            ? `开始压缩用户记忆 user=${parsed.userId}（LLM 手动压缩）...`
-            : `开始压缩会话摘要 session=${parsed.sessionKey}（LLM 手动压缩）...`,
-        );
+        const stats = activityStore.getTodayTalkStats(groupId);
+        const imageFile = await renderTalkStatsCard(stats);
+        await sendContextImage(context, imageFile);
+      },
+    }),
+    defineCommand({
+      name: "emoji_stats",
+      help: "/表情包统计 [群号]",
+      cooldownExempt: true,
+      parse(message) {
+        const matched = message.trim().match(/^\/表情包统计(?:\s+(\d+))?$/);
+        if (!matched) return null;
+        return { groupId: matched[1] ? Number(matched[1]) : undefined };
+      },
+      async execute(context, payload) {
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /表情包统计，或私聊发送 /表情包统计 <群号>");
+          return;
+        }
 
-        try {
-          const result =
-            parsed.kind === "user"
-              ? await compactUserMemoryWithLlm(parsed.userId)
-              : await compactSessionMemoryWithLlm(parsed.sessionKey);
-          if (result.target === "user") {
-            await context.sendText(
-              `用户记忆压缩完成 user=${result.userId} facts ${result.before} -> ${result.after}` +
-              (result.note ? `\nnote=${result.note}` : ""),
-            );
-            return;
-          }
-          await context.sendText(
-            `会话摘要压缩完成 session=${result.sessionKey} summaries ${result.before} -> ${result.after}` +
-            (result.note ? `\nnote=${result.note}` : ""),
-          );
-        } catch (error) {
-          logger.warn("[memory] /记忆压缩 失败:", error);
-          const message = error instanceof Error ? error.message : String(error);
-          await context.sendText(`记忆压缩失败：${message}`);
+        const stats = activityStore.getTodayEmojiStats(groupId);
+        const top3 = activityStore.getTodayTopEmojis(groupId, Date.now(), 3);
+        const imageFile = await renderEmojiStatsCard(stats);
+        const message = buildMessage(...buildEmojiStatsMixedMessageParts(imageFile, top3));
+        if (context.messageType === "group" && typeof context.groupId === "number") {
+          await context.client.sendMessage({ groupId: context.groupId, message });
+        } else {
+          await context.client.sendMessage({ userId: context.userId, message });
         }
       },
     }),
@@ -187,7 +259,6 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
       async execute(context) {
         const snapshot = configStore.snapshot;
-        const skillCount = runtimeSkills.registry.list().length;
         const rootUserId =
           typeof config.permissions.rootUserId === "number"
             ? String(config.permissions.rootUserId)
@@ -196,8 +267,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           `rootUserId=${rootUserId} cooldownMs=${snapshot.cooldownMs} ` +
           `groupReplyMode=@only proactiveGroupReply=false ` +
           `autoApproveGroup=${config.requests.autoApproveGroup} ` +
-          `autoApproveFriend=${config.requests.autoApproveFriend} ` +
-          `skillsLoaded=${skillCount}`,
+          `autoApproveFriend=${config.requests.autoApproveFriend}`,
         );
       },
     }),
@@ -231,3 +301,4 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
   ];
 }
+

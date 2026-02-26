@@ -1,6 +1,7 @@
 import { logger } from "../utils/logger";
 import { config } from "../config";
-import { chatAgentLoop } from "../chat";
+import { activityStore } from "../activity/store";
+import { chatOrchestrator } from "../chat";
 import type { ChatEvent, ChatQuotedMessage } from "../chat/types";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
@@ -17,7 +18,7 @@ import {
   type OneBotEvent,
   type RequestEvent,
 } from "./commands/types";
-import type { MessageSegment } from "./message";
+import { buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
   if (isMessageEvent(event)) {
@@ -55,6 +56,18 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
   if (typeof userId !== "number") {
     return;
   }
+
+  activityStore.recordMessage({
+    scope: event.message_type === "group" ? "group" : "private",
+    groupId: typeof groupId === "number" ? groupId : undefined,
+    userId,
+    userName: getSenderName(event),
+    eventTimeMs:
+      typeof event.time === "number" && Number.isFinite(event.time) && event.time > 0
+        ? Math.floor(event.time * 1000)
+        : Date.now(),
+    segments: Array.isArray(event.message) ? event.message : undefined,
+  });
 
   const message = getMessageText(event);
   if (!message) {
@@ -94,8 +107,13 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   if (typeof userId !== "number") return;
 
   const quotedMessage = await resolveQuotedMessage(client, event);
-  const chatEvent = toChatEvent(event, message, quotedMessage);
-  await chatAgentLoop.onIncomingMessage(client, chatEvent);
+  const visibleMessage = getChatVisibleText(event) || message;
+  const chatEvent = toChatEvent(event, visibleMessage, quotedMessage);
+  const reply = await chatOrchestrator.handle(chatEvent);
+  if (!reply || !reply.text.trim()) {
+    return;
+  }
+  await sendChatReply(client, chatEvent, reply.text, reply.quoteMessageId);
 }
 
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
@@ -176,12 +194,47 @@ function extractTextFromSegments(segments: MessageSegment[]): string {
     .trim();
 }
 
+function getChatVisibleText(event: MessageEvent): string {
+  if (Array.isArray(event.message)) {
+    const summary = summarizeSegments(event.message, {
+      skipReply: true,
+      includeForwardPlaceholder: true,
+    });
+    if (summary) return summary;
+  }
+  if (typeof event.raw_message === "string" && event.raw_message.trim()) {
+    return parseRawCqMessage(event.raw_message.trim()).summary || event.raw_message.trim();
+  }
+  if (typeof event.message === "string" && event.message.trim()) {
+    return event.message.trim();
+  }
+  return "";
+}
+
 type GetMsgData = {
   message?: unknown;
   raw_message?: unknown;
   sender?: unknown;
   user_id?: unknown;
 };
+
+type GetForwardMsgNode = {
+  data?: {
+    nickname?: unknown;
+    name?: unknown;
+    content?: unknown;
+    message?: unknown;
+  };
+  nickname?: unknown;
+  name?: unknown;
+  content?: unknown;
+  message?: unknown;
+};
+
+type GetForwardMsgData = {
+  messages?: unknown;
+  message?: unknown;
+} | unknown[];
 
 function getReplySegmentId(segments: MessageSegment[] | undefined): number | string | undefined {
   if (!Array.isArray(segments)) return undefined;
@@ -194,6 +247,18 @@ function getReplySegmentId(segments: MessageSegment[] | undefined): number | str
     }
   }
 
+  return undefined;
+}
+
+function getForwardSegmentId(segments: MessageSegment[] | undefined): number | string | undefined {
+  if (!Array.isArray(segments)) return undefined;
+  for (const segment of segments) {
+    if (segment.type !== "forward") continue;
+    const id = segment.data?.id;
+    if (typeof id === "number" || typeof id === "string") {
+      return id;
+    }
+  }
   return undefined;
 }
 
@@ -277,6 +342,16 @@ function parseRawCqMessage(raw: string): { summary: string; segments: MessageSeg
 }
 
 function summarizeQuotedSegments(segments: MessageSegment[]): string {
+  return summarizeSegments(segments, {
+    skipReply: true,
+    includeForwardPlaceholder: true,
+  });
+}
+
+function summarizeSegments(
+  segments: MessageSegment[],
+  options?: { skipReply?: boolean; includeForwardPlaceholder?: boolean },
+): string {
   const parts: string[] = [];
   for (const segment of segments) {
     if (segment.type === "text") {
@@ -306,12 +381,45 @@ function summarizeQuotedSegments(segments: MessageSegment[]): string {
     }
 
     if (segment.type === "reply") {
+      if (options?.skipReply) {
+        continue;
+      }
+      parts.push("[引用]");
+      continue;
+    }
+
+    if (segment.type === "forward") {
+      parts.push(options?.includeForwardPlaceholder ? "[聊天记录]" : "[forward]");
+      continue;
+    }
+
+    if (segment.type === "node") {
+      const nodeSummary = summarizeForwardNode(segment.data);
+      parts.push(nodeSummary || "[聊天记录节点]");
       continue;
     }
 
     parts.push(`[${segment.type}]`);
   }
   return normalizeWhitespace(parts.join(" "));
+}
+
+function summarizeForwardNode(data: Record<string, unknown> | undefined): string {
+  if (!data) return "";
+  const nickname =
+    typeof data.nickname === "string" && data.nickname.trim() ? data.nickname.trim() : undefined;
+
+  const content =
+    summarizeSegments(extractSegmentsFromUnknownMessage(data.content ?? data.message), {
+      skipReply: true,
+      includeForwardPlaceholder: true,
+    }) ||
+    (typeof data.content === "string" ? normalizeWhitespace(data.content) : "");
+
+  if (!content) {
+    return nickname ? `${nickname}: [聊天记录节点]` : "[聊天记录节点]";
+  }
+  return nickname ? `${nickname}: ${content}` : content;
 }
 
 function extractSegmentsFromUnknownMessage(message: unknown): MessageSegment[] {
@@ -344,6 +452,53 @@ function getSenderNameFromUnknown(sender: unknown): string | undefined {
   return undefined;
 }
 
+function extractForwardNodes(data: GetForwardMsgData | undefined): GetForwardMsgNode[] {
+  if (Array.isArray(data)) return data as GetForwardMsgNode[];
+  if (!data || typeof data !== "object") return [];
+  const record = data as { messages?: unknown; message?: unknown };
+  if (Array.isArray(record.messages)) return record.messages as GetForwardMsgNode[];
+  if (Array.isArray(record.message)) return record.message as GetForwardMsgNode[];
+  return [];
+}
+
+function summarizeForwardNodes(nodes: GetForwardMsgNode[]): string {
+  if (nodes.length <= 0) return "";
+  const lines: string[] = [];
+  for (const [index, node] of nodes.slice(0, 8).entries()) {
+    const source = node.data && typeof node.data === "object" ? node.data : node;
+    const sourceRecord = source as Record<string, unknown>;
+    const nickname =
+      (typeof sourceRecord.nickname === "string" && sourceRecord.nickname.trim()) ||
+      (typeof sourceRecord.name === "string" && sourceRecord.name.trim()) ||
+      "";
+    const contentSummary =
+      summarizeSegments(extractSegmentsFromUnknownMessage(sourceRecord.content ?? sourceRecord.message), {
+        skipReply: true,
+        includeForwardPlaceholder: true,
+      }) ||
+      (typeof sourceRecord.content === "string" ? normalizeWhitespace(sourceRecord.content) : "");
+    lines.push(`${index + 1}. ${nickname || "成员"}: ${contentSummary || "[非文本]"}`);
+  }
+  return `[聊天记录]\n${lines.join("\n")}`;
+}
+
+async function resolveForwardSummary(
+  client: NapcatClient,
+  quotedSegments: MessageSegment[],
+): Promise<string> {
+  const forwardId = getForwardSegmentId(quotedSegments);
+  if (forwardId === undefined) return "";
+
+  try {
+    const response = await client.sendAction("get_forward_msg", { id: forwardId });
+    const nodes = extractForwardNodes(response.data as GetForwardMsgData | undefined);
+    return summarizeForwardNodes(nodes);
+  } catch (error) {
+    logger.warn(`[chat] 获取引用聊天记录失败 forward_id=${String(forwardId)}`, error);
+    return "";
+  }
+}
+
 async function resolveQuotedMessage(
   client: NapcatClient,
   event: MessageEvent,
@@ -369,8 +524,9 @@ async function resolveQuotedMessage(
     }
 
     const summaryFromSegments = summarizeQuotedSegments(quotedSegments);
+    const forwardSummary = await resolveForwardSummary(client, quotedSegments);
     const text =
-      summaryFromSegments ||
+      [summaryFromSegments, forwardSummary].filter(Boolean).join("\n") ||
       parsedMessageString?.summary ||
       parsedRawMessage?.summary ||
       "(引用消息为非文本内容)";
@@ -415,6 +571,26 @@ async function sendContextText(
   if (event.message_type === "group" && typeof event.group_id === "number") {
     await client.sendGroupText(event.group_id, text);
   }
+}
+
+async function sendChatReply(
+  client: NapcatClient,
+  event: ChatEvent,
+  text: string,
+  quoteMessageId?: number | string,
+): Promise<void> {
+  if (event.scope === "group" && typeof event.groupId === "number") {
+    if (quoteMessageId !== undefined) {
+      await client.sendMessage({
+        groupId: event.groupId,
+        message: buildMessage(replySegment(quoteMessageId), textSegment(text)),
+      });
+      return;
+    }
+    await client.sendGroupText(event.groupId, text);
+    return;
+  }
+  await client.sendPrivateText(event.userId, text);
 }
 
 function getSenderName(event: MessageEvent): string | undefined {
