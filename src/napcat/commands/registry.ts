@@ -7,7 +7,7 @@ type HelpScope = "root" | "user";
 let commandRegistry: CommandDefinition<unknown>[] = [];
 
 function getCommandHelpText(scope: HelpScope): string {
-  return commandRegistry
+  const helps = commandRegistry
     .filter((definition) => {
       if (!definition.help) return false;
       const access = definition.access ?? "root";
@@ -15,8 +15,16 @@ function getCommandHelpText(scope: HelpScope): string {
       return access === "user";
     })
     .map((definition) => definition.help?.trim() || "")
-    .filter(Boolean)
-    .join("\n");
+    .filter(Boolean);
+
+  const preferred = scope === "root" ? "/help" : "/帮助";
+  helps.sort((a, b) => {
+    if (a === preferred && b !== preferred) return -1;
+    if (b === preferred && a !== preferred) return 1;
+    return 0;
+  });
+
+  return helps.join("\n");
 }
 
 function createBuiltInCommands(): CommandDefinition<unknown>[] {

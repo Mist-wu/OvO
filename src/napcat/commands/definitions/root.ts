@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
-import { activityStore, renderEmojiStatsCard, renderTalkStatsCard, type TopEmojiItem } from "../../../activity";
+import { activityStore, renderEmojiStatsCard, renderRechargeCard, renderTalkStatsCard, type TopEmojiItem } from "../../../activity";
 import { askGemini } from "../../../llm";
 import { configStore } from "../../../storage/config_store";
 import { buildMessage, face as faceSegment, image as imageSegment, text as textSegment, type MessageInput } from "../../message";
@@ -78,6 +78,26 @@ async function sendContextTextMessage(
   await context.client.sendMessage({ userId: context.userId, message: buildMessage(textSegment(text)) });
 }
 
+async function sendContextMixedMessage(
+  context: CommandExecutionContext,
+  parts: MessageInput[],
+): Promise<void> {
+  const message = buildMessage(...parts);
+  if (context.messageType === "group" && typeof context.groupId === "number") {
+    await context.client.sendMessage({ groupId: context.groupId, message });
+    return;
+  }
+  await context.client.sendMessage({ userId: context.userId, message });
+}
+
+function resolveCommandNowMs(context: CommandExecutionContext): number {
+  const ts = context.event.time;
+  if (typeof ts === "number" && Number.isFinite(ts) && ts > 0) {
+    return Math.floor(ts * 1000);
+  }
+  return Date.now();
+}
+
 function parseFaceIdFromTopEmoji(item: TopEmojiItem): number | undefined {
   if (item.kind !== "face") return undefined;
   const matched = item.key.match(/^face:(?:id|face_id|emoji_id):(?<id>\d+)$/);
@@ -106,16 +126,50 @@ function canEmbedEmojiImage(assetRef: string | undefined): boolean {
   }
 }
 
-function buildEmojiTop3Text(top3: TopEmojiItem[]): string {
+function buildEmojiTop3Text(top3: TopEmojiItem[], title = "今日最受欢迎表情包TOP3："): string {
   if (top3.length <= 0) {
-    return "今日最受欢迎表情包TOP3：\n今天还没有表情包/表情使用记录";
+    return `${title}\n今天还没有表情包/表情使用记录`;
   }
-  const lines = ["今日最受欢迎表情包TOP3："];
+  const lines = [title];
   for (const [index, item] of top3.slice(0, 3).entries()) {
     const name = item.kind === "image" ? "表情包" : item.label;
     lines.push(`${index + 1}. ${name} 使用次数：${item.count}次`);
   }
   return lines.join("\n");
+}
+
+function buildEmojiTop3MixedMessageParts(top3: TopEmojiItem[], title: string): MessageInput[] {
+  const parts: MessageInput[] = [textSegment(`${title}\n`)];
+
+  if (top3.length <= 0) {
+    parts.push(textSegment("今天还没有表情包/表情使用记录"));
+    return parts;
+  }
+
+  for (const [index, item] of top3.slice(0, 3).entries()) {
+    parts.push(textSegment(`\n${index + 1}. 使用次数：${item.count}次\n`));
+
+    if (item.kind === "image") {
+      if (canEmbedEmojiImage(item.assetRef)) {
+        parts.push(imageSegment(item.assetRef!));
+        parts.push(textSegment("\n"));
+      } else {
+        parts.push(textSegment("表情包（图片链接已失效或不可发送）\n"));
+      }
+      continue;
+    }
+
+    const faceId = parseFaceIdFromTopEmoji(item);
+    if (faceId !== undefined) {
+      parts.push(faceSegment(faceId));
+      parts.push(textSegment(` ${item.label}\n`));
+      continue;
+    }
+
+    parts.push(textSegment(`${item.label}\n`));
+  }
+
+  return parts;
 }
 
 function buildEmojiStatsMixedMessageParts(imageFile: string, top3: TopEmojiItem[]): MessageInput[] {
@@ -151,6 +205,14 @@ function buildEmojiStatsMixedMessageParts(imageFile: string, top3: TopEmojiItem[
   }
 
   return parts;
+}
+
+async function resolveEmojiTop3Assets(top3Raw: TopEmojiItem[]): Promise<TopEmojiItem[]> {
+  return Promise.all(top3Raw.map(async (item) => {
+    if (item.kind !== "image" || !item.assetRef) return item;
+    const localAsset = await activityStore.ensureEmojiAssetLocal(item.assetRef);
+    return { ...item, assetRef: localAsset ?? item.assetRef };
+  }));
 }
 
 export function createRootCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {
@@ -209,6 +271,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
     defineCommand({
       name: "talk_stats",
+      access: "user",
       help: "/发言统计 [群号]",
       cooldownExempt: true,
       parse(message) {
@@ -230,6 +293,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
     defineCommand({
       name: "emoji_stats",
+      access: "user",
       help: "/表情包统计 [群号]",
       cooldownExempt: true,
       parse(message) {
@@ -246,11 +310,7 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
 
         const stats = activityStore.getTodayEmojiStats(groupId);
         const top3Raw = activityStore.getTodayTopEmojis(groupId, Date.now(), 3);
-        const top3 = await Promise.all(top3Raw.map(async (item) => {
-          if (item.kind !== "image" || !item.assetRef) return item;
-          const localAsset = await activityStore.ensureEmojiAssetLocal(item.assetRef);
-          return { ...item, assetRef: localAsset ?? item.assetRef };
-        }));
+        const top3 = await resolveEmojiTop3Assets(top3Raw);
         const imageFile = await renderEmojiStatsCard(stats);
         const message = buildMessage(...buildEmojiStatsMixedMessageParts(imageFile, top3));
         try {
@@ -263,6 +323,40 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           logger.warn("[activity] 表情统计混合消息发送失败，降级为图+文字:", error);
           await sendContextImage(context, imageFile);
           await sendContextTextMessage(context, buildEmojiTop3Text(top3));
+        }
+      },
+    }),
+    defineCommand({
+      name: "yesterday_stats",
+      access: "user",
+      help: "/昨日统计 [群号]",
+      cooldownExempt: true,
+      parse(message) {
+        const matched = message.trim().match(/^\/昨日统计(?:\s+(\d+))?$/);
+        if (!matched) return null;
+        return { groupId: matched[1] ? Number(matched[1]) : undefined };
+      },
+      async execute(context, payload) {
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /昨日统计，或私聊发送 /昨日统计 <群号>");
+          return;
+        }
+
+        const nowMs = resolveCommandNowMs(context);
+        const yesterdayMs = nowMs - 24 * 60 * 60 * 1000;
+
+        const talkStats = activityStore.getTodayTalkStats(groupId, yesterdayMs);
+        const talkImage = await renderTalkStatsCard(talkStats);
+        await sendContextImage(context, talkImage);
+
+        const top3Raw = activityStore.getTodayTopEmojis(groupId, yesterdayMs, 3);
+        const top3 = await resolveEmojiTop3Assets(top3Raw);
+        try {
+          await sendContextMixedMessage(context, buildEmojiTop3MixedMessageParts(top3, "昨日最受欢迎表情包TOP3："));
+        } catch (error) {
+          logger.warn("[activity] 昨日统计TOP3发送失败，降级为文字:", error);
+          await sendContextTextMessage(context, buildEmojiTop3Text(top3, "昨日最受欢迎表情包TOP3："));
         }
       },
     }),
@@ -298,6 +392,30 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           `retry_count=${runtime.retryCount}`,
           `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
         ].join("\n"));
+      },
+    }),
+    defineCommand({
+      name: "recharge_points",
+      help: "/充值 <积分> <QQ号>",
+      cooldownExempt: true,
+      parse(message) {
+        const parts = splitParts(message);
+        if (parts[0] !== "/充值" || parts.length !== 3) return null;
+
+        const points = parseNumber(parts[1]);
+        const userId = parseNumber(parts[2]);
+        if (points === null || userId === null) return null;
+        return { points, userId };
+      },
+      async execute(context, payload) {
+        const { points, userId } = payload as { points: number; userId: number };
+        const now =
+          typeof context.event.time === "number" && Number.isFinite(context.event.time) && context.event.time > 0
+            ? Math.floor(context.event.time * 1000)
+            : Date.now();
+        const result = activityStore.addUserPoints({ userId, points, now });
+        const imageFile = await renderRechargeCard(result);
+        await sendContextImage(context, imageFile);
       },
     }),
     defineCommand({
