@@ -1,18 +1,8 @@
-import { setTimeout as delay } from "node:timers/promises";
-
 import { config } from "../config";
-import { planChatAction } from "./action_planner";
-import { createChatContextPipeline } from "./context_pipeline";
-import { groupMessageCache } from "./group_message_cache";
 import { resolveVisualInputs } from "./media";
-import { ChatMemoryManager } from "./memory";
-import { getPersonaProfile } from "./persona";
 import { generateChatReply } from "./reply";
-import { createContextSessionKey, InMemorySessionStore } from "./session_store";
-import { chatStateEngine } from "./state_engine";
-import { routeChatTool } from "./tool_router";
 import { decideTrigger } from "./trigger";
-import type { ChatEvent, ChatReply, SessionMessage, TriggerDecision } from "./types";
+import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 
 export type PreparedChatReply = {
   event: ChatEvent;
@@ -32,11 +22,7 @@ export interface ChatOrchestrator {
   handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
 }
 
-class DefaultChatOrchestrator implements ChatOrchestrator {
-  private readonly sessions = new InMemorySessionStore(config.chat.maxSessionMessages);
-  private readonly memory = new ChatMemoryManager(this.sessions);
-  private readonly contextPipeline = createChatContextPipeline();
-
+class MinimalChatOrchestrator implements ChatOrchestrator {
   decide(event: ChatEvent): TriggerDecision {
     if (!config.chat.enabled) {
       return {
@@ -47,9 +33,7 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
         willingness: 0,
       };
     }
-
-    const hints = chatStateEngine.getTriggerHints(event);
-    return decideTrigger(event, config.chat.botAliases, hints);
+    return decideTrigger(event, config.chat.botAliases);
   }
 
   async prepare(
@@ -58,136 +42,40 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     options?: { signal?: AbortSignal },
   ): Promise<PreparedChatReply | null> {
     const decision = decisionInput ?? this.decide(event);
-    if (!decision.shouldReply) {
-      return null;
-    }
+    if (!decision.shouldReply) return null;
 
-    const sessionKey = createContextSessionKey(event);
-    const baseHistory = this.sessions.get(sessionKey);
-    const cachedGroupContext = groupMessageCache.getContextMessagesForReply(event, baseHistory, {
-      limit: 10,
-    });
-    const history = mergePromptHistory(baseHistory, cachedGroupContext, config.chat.maxSessionMessages + 10);
-    const stateContext = chatStateEngine.getPromptState(event);
     const directVisuals = await resolveVisualInputs(event.segments, options?.signal);
     let quotedVisuals: Awaited<ReturnType<typeof resolveVisualInputs>> = [];
-    if (event.quotedMessage?.segments && event.quotedMessage.segments.length > 0) {
+    if (event.quotedMessage?.segments?.length) {
       const room = Math.max(0, config.chat.mediaMaxImages - directVisuals.length);
       if (room > 0) {
-        const resolvedQuoted = await resolveVisualInputs(event.quotedMessage.segments, options?.signal);
-        quotedVisuals = resolvedQuoted.slice(0, room);
+        quotedVisuals = (await resolveVisualInputs(event.quotedMessage.segments, options?.signal)).slice(0, room);
       }
     }
     const visuals = [...directVisuals, ...quotedVisuals];
-    const normalizedUserText = summarizeUserMessage(event.text, visuals.length);
-    const toolResult = await routeChatTool(event, options?.signal);
-    const plan = planChatAction({
-      event,
-      decision,
-      normalizedUserText,
-      toolResult,
-      stateContext,
-    });
-    if (plan.type === "no_reply") {
-      return null;
-    }
-    if (plan.type === "wait" && (plan.waitMs ?? 0) > 0) {
-      await delay(Math.max(0, Math.floor(plan.waitMs ?? 0)), undefined, {
-        signal: options?.signal,
-      });
-    }
 
-    const quoteMessageId = plan.shouldQuote ? event.messageId : undefined;
-    if (plan.type === "complete_talk" && plan.completeTalkText) {
-      return {
-        event,
-        sessionKey,
-        normalizedUserText,
-        reply: {
-          text: plan.completeTalkText,
-          from: "tool",
-          quoteMessageId,
-          plannerReason: plan.reason,
-          styleVariant: plan.styleVariant,
-          reason: decision.reason,
-          priority: decision.priority,
-          willingness: decision.willingness,
-        },
-      };
-    }
-
-    const persona = getPersonaProfile({
-      styleVariant: plan.styleVariant,
-      stateContext,
-    });
-    const memoryContext = this.memory.getContext(
-      event,
-      sessionKey,
-      plan.memoryMode === "lite"
-        ? {
-          factCount: Math.min(3, config.chat.memoryContextFactCount),
-          summaryCount: Math.min(1, config.chat.summaryContextCount),
-        }
-        : undefined,
-    );
-    if (plan.type === "tool_direct" && toolResult.type === "direct") {
-      return {
-        event,
-        sessionKey,
-        normalizedUserText,
-        reply: {
-          text: toolResult.text,
-          from: "tool",
-          quoteMessageId,
-          plannerReason: plan.reason,
-          styleVariant: plan.styleVariant,
-          reason: decision.reason,
-          priority: decision.priority,
-          willingness: decision.willingness,
-        },
-      };
-    }
-
-    const prompt = await this.contextPipeline.run({
-      persona,
-      history,
-      archivedSummaries: memoryContext.archivedSummaries,
-      longTermFacts: memoryContext.longTermFacts,
-      userDisplayName: memoryContext.userDisplayName,
-      userText: event.text,
-      quotedMessage: event.quotedMessage,
-      scope: event.scope,
-      mediaCount: visuals.length,
-      eventTimeMs: event.eventTimeMs,
-      stateContext,
-      styleVariant: plan.styleVariant,
-      plannerHint: `action=${plan.type}; reason=${plan.reason}; quote=${quoteMessageId !== undefined ? "on" : "off"}; memory=${plan.memoryMode}; waitMs=${plan.waitMs ?? 0}; toolRetry=${plan.toolRetryHint ?? "none"}`,
-      toolContext: toolResult.type === "context" ? toolResult.contextText : undefined,
-    }, options?.signal);
-
+    const prompt = buildMinimalPrompt(event, visuals.length);
     const generated = await generateChatReply({
       prompt,
       visuals,
-      seed: `${sessionKey}:${event.messageId ?? event.eventTimeMs ?? Date.now()}:${plan.styleVariant}`,
       signal: options?.signal,
+      seed: `${event.scope}:${event.groupId ?? 0}:${event.userId}:${event.messageId ?? Date.now()}`,
     });
-    const reply =
-      toolResult.type === "context" && generated.from === "fallback"
-        ? {
-          text: toolResult.fallbackText,
-          from: "tool" as const,
-        }
-        : generated;
+
+    const quoteMessageId =
+      event.scope === "group" &&
+      event.messageId !== undefined &&
+      config.chat.quoteMode !== "off"
+        ? event.messageId
+        : undefined;
 
     return {
       event,
-      sessionKey,
-      normalizedUserText,
+      sessionKey: event.scope === "group" ? `g:${event.groupId ?? 0}` : `p:${event.userId}`,
+      normalizedUserText: summarizeUserMessage(event.text, visuals.length),
       reply: {
-        ...reply,
+        ...generated,
         quoteMessageId,
-        plannerReason: plan.reason,
-        styleVariant: plan.styleVariant,
         reason: decision.reason,
         priority: decision.priority,
         willingness: decision.willingness,
@@ -195,103 +83,45 @@ class DefaultChatOrchestrator implements ChatOrchestrator {
     };
   }
 
-  commit(prepared: PreparedChatReply): void {
-    this.recordConversationTurn(
-      prepared.sessionKey,
-      prepared.event,
-      prepared.normalizedUserText,
-      prepared.reply.text,
-    );
+  commit(_prepared: PreparedChatReply): void {
+    // 最小模式：不保留会话/长期记忆
   }
 
   async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
     const prepared = await this.prepare(event, decisionInput);
-    if (!prepared) {
-      return null;
-    }
+    if (!prepared) return null;
     this.commit(prepared);
     return prepared.reply;
   }
-
-  private recordConversationTurn(
-    sessionKey: string,
-    event: ChatEvent,
-    normalizedUserText: string,
-    replyText: string,
-  ): void {
-    this.sessions.append(sessionKey, {
-      role: "user",
-      text: normalizedUserText,
-      ts: Date.now(),
-      speakerName: event.senderName?.trim() || `用户${event.userId}`,
-      sourceMessageId: event.messageId,
-    });
-    this.sessions.append(sessionKey, {
-      role: "assistant",
-      text: replyText,
-      ts: Date.now(),
-      speakerName: config.chat.personaName,
-    });
-    this.memory.recordTurn({
-      event,
-      sessionKey,
-      userText: normalizedUserText,
-    });
-    chatStateEngine.recordReply(event, replyText);
-  }
 }
 
-function mergePromptHistory(base: SessionMessage[], extras: SessionMessage[], maxItems: number): SessionMessage[] {
-  if (extras.length <= 0) {
-    return base;
-  }
+function buildMinimalPrompt(event: ChatEvent, _mediaCount: number): string {
+  const quoted = event.quotedMessage
+    ? `引用内容${event.quotedMessage.senderName ? `（来自${event.quotedMessage.senderName}）` : ""}：${event.quotedMessage.text}`
+    : "";
+  const userText = event.text.trim() || "(无文本)";
 
-  const seenMessageIds = new Set<string>();
-  const seenFallback = new Set<string>();
-  const merged = [...base];
-
-  for (const item of base) {
-    if (item.sourceMessageId !== undefined) {
-      seenMessageIds.add(String(item.sourceMessageId));
-      continue;
-    }
-    seenFallback.add(`${item.role}|${item.speakerName ?? ""}|${item.text}`);
-  }
-
-  for (const item of extras) {
-    if (item.sourceMessageId !== undefined) {
-      const id = String(item.sourceMessageId);
-      if (seenMessageIds.has(id)) continue;
-      seenMessageIds.add(id);
-    } else {
-      const key = `${item.role}|${item.speakerName ?? ""}|${item.text}`;
-      if (seenFallback.has(key)) continue;
-      seenFallback.add(key);
-    }
-    merged.push(item);
-  }
-
-  merged.sort((a, b) => a.ts - b.ts);
-  if (merged.length <= maxItems) {
-    return merged;
-  }
-  return merged.slice(merged.length - maxItems);
+  return [
+    "你是一个AI助手。",
+    "请使用纯文本回复，尽量少用Markdown格式。",
+    quoted,
+    `用户消息：${userText}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function summarizeUserMessage(text: string, mediaCount: number): string {
   const normalizedText = text.trim();
-  if (normalizedText && mediaCount <= 0) {
-    return normalizedText;
-  }
-  if (!normalizedText && mediaCount > 0) {
-    return `[图片/表情包 x${mediaCount}]`;
-  }
-  if (normalizedText && mediaCount > 0) {
-    return `${normalizedText} [图片/表情包 x${mediaCount}]`;
-  }
+  if (normalizedText && mediaCount <= 0) return normalizedText;
+  if (!normalizedText && mediaCount > 0) return `[图片/表情包 x${mediaCount}]`;
+  if (normalizedText && mediaCount > 0) return `${normalizedText} [图片/表情包 x${mediaCount}]`;
   return "(空消息)";
 }
 
 export function createChatOrchestrator(): ChatOrchestrator {
-  return new DefaultChatOrchestrator();
+  return new MinimalChatOrchestrator();
 }
+
+
+

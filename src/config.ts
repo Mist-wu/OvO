@@ -119,7 +119,7 @@ export const config = {
     groupTriggerMode: process.env.CHAT_GROUP_TRIGGER_MODE?.trim() || "passive",
     botAliases: stringListFromEnv(process.env.CHAT_BOT_ALIASES, ["小o", "ovo"]),
     emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
-    maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 300),
+    maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 1000),
     personaName: process.env.CHAT_PERSONA_NAME?.trim() || "小o",
     mediaEnabled: booleanFromEnv(process.env.CHAT_MEDIA_ENABLED, true),
     mediaMaxImages: numberFromEnv(process.env.CHAT_MEDIA_MAX_IMAGES, 2),
@@ -230,3 +230,4 @@ export const config = {
     }),
   },
 };
+

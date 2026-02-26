@@ -1,7 +1,6 @@
 import type { MessageSegment } from "../napcat/message";
 import { hasVisualSegments } from "./media";
 import type { ChatEvent, TriggerDecision } from "./types";
-import type { TriggerRuntimeHints } from "./state_engine";
 
 function hasAtSelf(segments: MessageSegment[] | undefined, selfId: number | undefined): boolean {
   if (!Array.isArray(segments)) return false;
@@ -62,7 +61,7 @@ function getPrivateWaitMs(text: string, hasVisual: boolean): number {
 export function decideTrigger(
   event: ChatEvent,
   _aliases: string[],
-  hints?: Partial<TriggerRuntimeHints>,
+  hints?: Record<string, unknown>,
 ): TriggerDecision {
   const text = event.text.trim();
   const hasVisual = hasVisualSegments(event.segments);
