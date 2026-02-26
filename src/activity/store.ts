@@ -90,6 +90,13 @@ export type DailyTalkStatsResult = {
 
 export type DailyEmojiStatsResult = DailyTalkStatsResult;
 
+export type TotalPointsRankResult = {
+  generatedAtMs: number;
+  items: DailyRankItem[];
+  totalPoints: number;
+  participantCount: number;
+};
+
 export type TopEmojiItem = {
   key: string;
   label: string;
@@ -112,6 +119,20 @@ export type SignInResult = {
   streakDays: number;
   totalPoints: number;
   rewardPoints: number;
+};
+
+export type RechargePointsResult = {
+  userId: number;
+  userName: string;
+  addedPoints: number;
+  totalPoints: number;
+  operatedAtMs: number;
+};
+
+export type UserPointsSnapshot = {
+  userId: number;
+  userName: string;
+  totalPoints: number;
 };
 
 const CURRENT_VERSION = 1;
@@ -742,6 +763,150 @@ export class ActivityStore {
       kind: item.kind,
       assetRef: item.assetRef,
     }));
+  }
+
+  getTotalPointsRanking(now = Date.now()): TotalPointsRankResult {
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const users = Object.entries(globalBucket.profiles ?? {})
+      .map(([userIdKey, profile]) => {
+        const record = profile as Partial<SignInUserRecord> | undefined;
+        const parsedUserId =
+          typeof record?.userId === "number" && Number.isFinite(record.userId)
+            ? Math.floor(record.userId)
+            : Number(userIdKey);
+        const safeUserId = Number.isFinite(parsedUserId) && parsedUserId > 0 ? parsedUserId : 0;
+        const totalPoints =
+          typeof record?.totalPoints === "number" && Number.isFinite(record.totalPoints)
+            ? Math.max(0, Math.floor(record.totalPoints))
+            : 0;
+        const userName = normalizeUserName(typeof record?.userName === "string" ? record.userName : undefined, safeUserId || 0);
+        return {
+          userId: safeUserId,
+          userName,
+          count: totalPoints,
+        };
+      })
+      .filter((item) => item.userId > 0 && item.count > 0);
+
+    users.sort((a, b) => b.count - a.count || a.userId - b.userId);
+    const totalPoints = users.reduce((sum, item) => sum + item.count, 0);
+    const items = users.slice(0, 10).map((item) => ({
+      userId: item.userId,
+      userName: item.userName,
+      count: item.count,
+      percent: totalPoints > 0 ? item.count / totalPoints : 0,
+    }));
+
+    return {
+      generatedAtMs: now,
+      items,
+      totalPoints,
+      participantCount: users.length,
+    };
+  }
+
+  addUserPoints(input: {
+    userId: number;
+    points: number;
+    userName?: string;
+    now?: number;
+  }): RechargePointsResult {
+    const userId = Math.floor(input.userId);
+    const points = Math.floor(input.points);
+    if (!Number.isFinite(userId) || userId <= 0 || !Number.isFinite(points) || points <= 0) {
+      throw new Error("invalid recharge params");
+    }
+
+    const userKey = String(userId);
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const existingProfile = globalBucket.profiles[userKey] as Partial<SignInUserRecord> | undefined;
+    const userName =
+      (typeof input.userName === "string" && input.userName.trim()) ||
+      (typeof existingProfile?.userName === "string" && existingProfile.userName.trim()) ||
+      `用户${userId}`;
+    const profile = normalizeSignInProfile(
+      existingProfile,
+      userId,
+      userName,
+    );
+
+    profile.userName = userName;
+    profile.totalPoints += points;
+    globalBucket.profiles[userKey] = profile;
+    this.persist();
+
+    return {
+      userId,
+      userName: profile.userName,
+      addedPoints: points,
+      totalPoints: profile.totalPoints,
+      operatedAtMs:
+        typeof input.now === "number" && Number.isFinite(input.now) && input.now > 0
+          ? Math.floor(input.now)
+          : Date.now(),
+    };
+  }
+
+  getUserPoints(input: { userId: number; userName?: string }): UserPointsSnapshot {
+    const userId = Math.floor(input.userId);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new Error("invalid user id");
+    }
+
+    const userKey = String(userId);
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const existingProfile = globalBucket.profiles[userKey] as Partial<SignInUserRecord> | undefined;
+    const userName =
+      (typeof input.userName === "string" && input.userName.trim()) ||
+      (typeof existingProfile?.userName === "string" && existingProfile.userName.trim()) ||
+      `用户${userId}`;
+    const totalPoints =
+      typeof existingProfile?.totalPoints === "number" && Number.isFinite(existingProfile.totalPoints)
+        ? Math.max(0, Math.floor(existingProfile.totalPoints))
+        : 0;
+
+    return {
+      userId,
+      userName,
+      totalPoints,
+    };
+  }
+
+  spendUserPoints(input: {
+    userId: number;
+    points: number;
+    userName?: string;
+  }): UserPointsSnapshot & { spentPoints: number } {
+    const userId = Math.floor(input.userId);
+    const points = Math.floor(input.points);
+    if (!Number.isFinite(userId) || userId <= 0 || !Number.isFinite(points) || points <= 0) {
+      throw new Error("invalid spend params");
+    }
+
+    const userKey = String(userId);
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const existingProfile = globalBucket.profiles[userKey] as Partial<SignInUserRecord> | undefined;
+    const userName =
+      (typeof input.userName === "string" && input.userName.trim()) ||
+      (typeof existingProfile?.userName === "string" && existingProfile.userName.trim()) ||
+      `用户${userId}`;
+    const profile = normalizeSignInProfile(existingProfile, userId, userName);
+
+    if (profile.totalPoints < points) {
+      throw new Error("insufficient points");
+    }
+
+    profile.userName = userName;
+    profile.totalPoints -= points;
+    globalBucket.profiles[userKey] = profile;
+    this.persist();
+
+    return {
+      userId,
+      userName: profile.userName,
+      totalPoints: profile.totalPoints,
+      spentPoints: points,
+    };
   }
 
   signIn(input: {

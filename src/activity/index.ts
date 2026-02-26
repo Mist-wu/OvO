@@ -2,8 +2,9 @@ export { activityStore } from "./store";
 export type {
   DailyEmojiStatsResult,
   DailyTalkStatsResult,
+  TotalPointsRankResult,
+  RechargePointsResult,
   SignInResult,
   TopEmojiItem,
 } from "./store";
-export { renderEmojiStatsCard, renderSignInCard, renderTalkStatsCard } from "./render";
-
+export { renderEmojiStatsCard, renderPointsRankingCard, renderRechargeCard, renderSignInCard, renderTalkStatsCard } from "./render";

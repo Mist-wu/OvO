@@ -6,6 +6,8 @@ import { createCanvas, loadImage, type CanvasRenderingContext2D } from "@napi-rs
 import type {
   DailyEmojiStatsResult,
   DailyTalkStatsResult,
+  TotalPointsRankResult,
+  RechargePointsResult,
   SignInResult,
   TopEmojiItem,
 } from "./store";
@@ -373,6 +375,20 @@ export async function renderTalkStatsCard(stats: DailyTalkStatsResult): Promise<
   return writeCardBuffer(buffer, "talk_stats");
 }
 
+export async function renderPointsRankingCard(stats: TotalPointsRankResult): Promise<string> {
+  const buffer = await drawRankingCard({
+    title: "积分排行榜",
+    subtitle: "累计积分 TOP 10",
+    generatedAtMs: stats.generatedAtMs,
+    unitLabel: "分",
+    summaryLeft: { value: stats.totalPoints, label: "总积分" },
+    summaryRight: { value: stats.participantCount, label: "总参与人数" },
+    items: stats.items,
+    accent: "#f4b400",
+  });
+  return writeCardBuffer(buffer, "points_rank");
+}
+
 function drawEmojiTopItemPlaceholder(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -568,5 +584,76 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
   });
 
   return writeCardBuffer(canvas.toBuffer("image/png"), "sign_in");
+}
+
+export async function renderRechargeCard(result: RechargePointsResult): Promise<string> {
+  const width = 980;
+  const height = 560;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "#6b52f5");
+  bg.addColorStop(1, "#4f67ec");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 30, "#f5f5f7");
+
+  drawText(ctx, "充值成功", width / 2, 110, {
+    font: 'bold 56px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+    color: "#2e2e34",
+    align: "center",
+  });
+  drawText(ctx, formatDateTimeCN(result.operatedAtMs), width / 2, 148, {
+    font: '22px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+    color: "#a8a8b0",
+    align: "center",
+  });
+
+  drawRoundedRect(ctx, 70, 185, width - 140, 98, 20, "#ececff");
+  const avatar = await loadAvatarImage(result.userId);
+  drawAvatarImage(ctx, 88, 201, 64, avatar, result.userName, 0);
+  drawText(ctx, result.userName, 172, 243, {
+    font: 'bold 34px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+    color: "#4a47d6",
+  });
+  drawText(ctx, `QQ ${result.userId}`, width - 100, 243, {
+    font: '24px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+    color: "#7f7fb0",
+    align: "right",
+  });
+
+  const boxes = [
+    { x: 70, y: 315, w: 250, title: "本次充值", value: `+${result.addedPoints} 分` },
+    { x: 365, y: 315, w: 250, title: "当前总积分", value: `${result.totalPoints} 分` },
+    { x: 660, y: 315, w: 250, title: "操作类型", value: "管理员充值" },
+  ];
+
+  for (const box of boxes) {
+    drawRoundedRect(ctx, box.x, box.y, box.w, 135, 18, "#ffffff");
+    ctx.strokeStyle = "#e8e8f0";
+    ctx.lineWidth = 2;
+    roundRect(ctx, box.x, box.y, box.w, 135, 18);
+    ctx.stroke();
+    drawText(ctx, box.value, box.x + box.w / 2, box.y + 62, {
+      font: 'bold 34px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+      color: "#5b55df",
+      align: "center",
+    });
+    drawText(ctx, box.title, box.x + box.w / 2, box.y + 102, {
+      font: '20px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+      color: "#9d9da8",
+      align: "center",
+    });
+  }
+
+  drawText(ctx, "积分已计入全局累计", width / 2, 500, {
+    font: '22px "Microsoft YaHei", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+    color: "#8d8d97",
+    align: "center",
+  });
+
+  return writeCardBuffer(canvas.toBuffer("image/png"), "recharge");
 }
 
