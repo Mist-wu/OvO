@@ -24,15 +24,15 @@ const EMBEDDED_MATH_FONT_PATHS = [
   "STIX2Math.otf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_SYMBOL_FONT_PATHS = [
-  "NotoSansCJKsc-Regular.otf",
   "NotoSansSymbols2-Regular.ttf",
+  "NotoSansCJKsc-Regular.otf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_FALLBACK_TEXT_FONT_PATHS = [
   "NotoSansCherokee-Regular.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_EMOJI_FONT_PATHS = [
-  "NotoSansSymbols2-Regular.ttf",
   "NotoColorEmoji.ttf",
+  "NotoSansSymbols2-Regular.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_TEXT_FONT_FAMILY = "OvO Text";
 const EMBEDDED_MATH_FONT_FAMILY = "OvO Math";
@@ -40,6 +40,8 @@ const EMBEDDED_SYMBOL_FONT_FAMILY = "OvO Symbol";
 const EMBEDDED_EMOJI_FONT_FAMILY = "OvO Emoji";
 const EMBEDDED_FALLBACK_TEXT_FONT_FAMILY = "OvO Fallback Text";
 const DEFAULT_FONT_STACK = '"OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif';
+const FORCED_SYMBOL_FONT_STACK = '"OvO Symbol", "OvO Math", "OvO Fallback Text", sans-serif';
+const FORCE_SYMBOL_FALLBACK_CHARS = new Set(["✩"]);
 const SYSTEM_TEXT_FONT_FAMILIES = [
   "ZCOOL KuaiLe",
   "ZCOOL QingKe HuangYou",
@@ -192,11 +194,72 @@ function drawText(
     baseline?: "top" | "hanging" | "middle" | "alphabetic" | "ideographic" | "bottom";
   },
 ): void {
-  ctx.font = options?.font ?? `28px ${DEFAULT_FONT_STACK}`;
+  const baseFont = options?.font ?? `28px ${DEFAULT_FONT_STACK}`;
+  const symbolOnlyFont = buildForcedSymbolFont(baseFont);
+  const textAlign = options?.align ?? "left";
+  const textBaseline = options?.baseline ?? "alphabetic";
+
+  ctx.font = baseFont;
   ctx.fillStyle = options?.color ?? "#333";
-  ctx.textAlign = options?.align ?? "left";
-  ctx.textBaseline = options?.baseline ?? "alphabetic";
+  ctx.textAlign = textAlign;
+  ctx.textBaseline = textBaseline;
+
+  if (needsForcedSymbolFallback(text)) {
+    drawTextWithPerCharFont(ctx, text, x, y, baseFont, symbolOnlyFont, textAlign);
+    return;
+  }
+
   ctx.fillText(text, x, y);
+}
+
+function needsForcedSymbolFallback(text: string): boolean {
+  for (const unit of splitTextUnits(text)) {
+    if (FORCE_SYMBOL_FALLBACK_CHARS.has(unit)) return true;
+  }
+  return false;
+}
+
+function buildForcedSymbolFont(baseFont: string): string {
+  const anchor = '"OvO Text"';
+  const anchorIndex = baseFont.indexOf(anchor);
+  if (anchorIndex < 0) return baseFont;
+  return `${baseFont.slice(0, anchorIndex)}${FORCED_SYMBOL_FONT_STACK}`;
+}
+
+function drawTextWithPerCharFont(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  baseFont: string,
+  symbolOnlyFont: string,
+  textAlign: "left" | "right" | "center" | "start" | "end",
+): void {
+  const units = splitTextUnits(text);
+  const chunks = units.map((unit) => {
+    const font = FORCE_SYMBOL_FALLBACK_CHARS.has(unit) ? symbolOnlyFont : baseFont;
+    ctx.font = font;
+    return {
+      unit,
+      font,
+      width: ctx.measureText(unit).width,
+    };
+  });
+
+  const totalWidth = chunks.reduce((sum, item) => sum + item.width, 0);
+  let cursorX = x;
+  if (textAlign === "center") {
+    cursorX -= totalWidth / 2;
+  } else if (textAlign === "right" || textAlign === "end") {
+    cursorX -= totalWidth;
+  }
+
+  for (const chunk of chunks) {
+    ctx.font = chunk.font;
+    ctx.textAlign = "left";
+    ctx.fillText(chunk.unit, cursorX, y);
+    cursorX += chunk.width;
+  }
 }
 
 function splitTextUnits(text: string): string[] {
