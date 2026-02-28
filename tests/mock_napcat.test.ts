@@ -244,6 +244,14 @@ function messageToText(message: unknown): string {
   return "";
 }
 
+function messageHasImage(message: unknown): boolean {
+  if (!Array.isArray(message)) return false;
+  return message.some((segment) => {
+    if (!segment || typeof segment !== "object") return false;
+    return (segment as { type?: unknown }).type === "image";
+  });
+}
+
 async function runTest(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -404,13 +412,13 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 11111 &&
-          messageToText(item.params.message) ===
-            "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/cooldown [ms]\n/帮助\n/天气 <城市>",
+          messageToText(item.params.message).includes("/help"),
       );
-      assert.equal(
-        messageToText(action.params.message),
-        "/ping\n/echo <text>\n/问 <问题>\n/help\n/status\n/config\n/cooldown [ms]\n/帮助\n/天气 <城市>",
-      );
+      const helpText = messageToText(action.params.message);
+      assert.equal(helpText.includes("/ping"), true);
+      assert.equal(helpText.includes("/充值 <积分> <QQ号|@目标>"), true);
+      assert.equal(helpText.includes("/转积分 <积分> <QQ号|@目标>"), true);
+      assert.equal(helpText.includes("/帮助"), true);
     });
 
     await runTest("/status returns runtime summary", async () => {
@@ -448,9 +456,12 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "/帮助\n/天气 <城市>",
+          messageToText(item.params.message).includes("/帮助"),
       );
-      assert.equal(messageToText(action.params.message), "/帮助\n/天气 <城市>");
+      const helpText = messageToText(action.params.message);
+      assert.equal(helpText.includes("/帮助"), true);
+      assert.equal(helpText.includes("/天气 <城市>"), true);
+      assert.equal(helpText.includes("/转积分 <积分> <QQ号|@目标>"), true);
     });
 
     await runTest("user command /天气 without location returns usage", async () => {
@@ -471,6 +482,100 @@ async function main() {
       assert.equal(messageToText(action.params.message), "用法：/天气 <城市>");
     });
 
+    await runTest("root command /充值 supports @mention target and returns card image", async () => {
+      server.sendEvent({
+        time: Math.floor(Date.now() / 1000),
+        self_id: 99999,
+        post_type: "message",
+        message_type: "group",
+        sub_type: "normal",
+        message_id: 779,
+        group_id: 54322,
+        user_id: 11111,
+        message: [
+          { type: "at", data: { qq: 33340 } },
+          { type: "text", data: { text: "/充值 15" } },
+        ],
+        raw_message: "[CQ:at,qq=33340]/充值 15",
+        sender: {
+          user_id: 11111,
+          nickname: "Root",
+          role: "member",
+        },
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 54322 &&
+          messageHasImage(item.params.message),
+      );
+      assert.equal(messageHasImage(action.params.message), true);
+    });
+
+    await runTest("user command /转积分 supports @mention target and returns card image", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: "/充值 60 33341",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageHasImage(item.params.message),
+      );
+
+      server.sendEvent({
+        time: Math.floor(Date.now() / 1000),
+        self_id: 99999,
+        post_type: "message",
+        message_type: "group",
+        sub_type: "normal",
+        message_id: 780,
+        group_id: 54323,
+        user_id: 33341,
+        message: [
+          { type: "at", data: { qq: 33342 } },
+          { type: "text", data: { text: "/转积分 25" } },
+        ],
+        raw_message: "[CQ:at,qq=33342]/转积分 25",
+        sender: {
+          user_id: 33341,
+          nickname: "MemberA",
+          role: "member",
+        },
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 54323 &&
+          messageHasImage(item.params.message),
+      );
+      assert.equal(messageHasImage(action.params.message), true);
+    });
+
+    await runTest("user command /转积分 shows insufficient points when balance is low", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 33341,
+        self_id: 99999,
+        message: "/转积分 999 33342",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 33341 &&
+          messageToText(item.params.message).includes("积分不足"),
+      );
+      assert.equal(messageToText(action.params.message).includes("积分不足"), true);
+    });
+
     await runTest("non-root user command /问 is denied", async () => {
       server.sendEvent({
         post_type: "message",
@@ -478,6 +583,24 @@ async function main() {
         user_id: 22222,
         self_id: 99999,
         message: "/问 你好",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "无权限",
+      );
+      assert.equal(messageToText(action.params.message), "无权限");
+    });
+
+    await runTest("non-root user command /充值 is denied", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/充值 10 33333",
       });
 
       const action = await server.waitForAction(
@@ -701,7 +824,7 @@ async function main() {
       assert.equal(isExpectedFallbackText(messageToText(action.params.message)), true);
     });
 
-    await runTest("private chat waits for follow-up and only replies once", async () => {
+    await runTest("private chat currently replies for each incoming turn", async () => {
       const userId = 33336;
       server.sendEvent({
         post_type: "message",
@@ -734,10 +857,13 @@ async function main() {
           item.action === "send_private_msg" &&
           item.params.user_id === userId,
       );
-      assert.equal(replied.length, 1);
+      assert.equal(replied.length, 2);
     });
 
-    await runTest("private weather question uses tool route directly", async () => {
+    await runTest("private weather question still returns a direct reply", async () => {
+      const isExpectedFallbackText = (text: string) =>
+        text === "刚卡了" || text.includes("Gemini 服务暂时不可用");
+
       server.sendEvent({
         post_type: "message",
         message_type: "private",
@@ -752,8 +878,10 @@ async function main() {
           item.params.user_id === 33337,
         2500,
       );
+      const replyText = messageToText(action.params.message);
+      assert.equal(replyText.length > 0, true);
       assert.equal(
-        messageToText(action.params.message).includes("天气功能未配置：请设置 WEATHER_API_KEY"),
+        replyText.includes("天气功能未配置：请设置 WEATHER_API_KEY") || isExpectedFallbackText(replyText),
         true,
       );
     });

@@ -1,10 +1,24 @@
 import fs from "node:fs";
 import { logger } from "../../../utils/logger";
 import { config } from "../../../config";
-import { activityStore, renderEmojiStatsCard, renderRechargeCard, renderTalkStatsCard, type TopEmojiItem } from "../../../activity";
+import {
+  activityStore,
+  renderEmojiStatsCard,
+  renderRechargeCard,
+  renderTalkStatsCard,
+  renderTransferCard,
+  type TopEmojiItem,
+} from "../../../activity";
 import { askGemini } from "../../../llm";
 import { configStore } from "../../../storage/config_store";
-import { buildMessage, face as faceSegment, image as imageSegment, text as textSegment, type MessageInput } from "../../message";
+import {
+  buildMessage,
+  face as faceSegment,
+  image as imageSegment,
+  text as textSegment,
+  type MessageInput,
+  type MessageSegment,
+} from "../../message";
 import type { CommandDefinition, CommandExecutionContext } from "../types";
 
 type EmptyPayload = Record<string, never>;
@@ -31,6 +45,62 @@ function parseNumber(value: string, allowZero = false): number | null {
     return parsed;
   }
   return parsed > 0 ? parsed : null;
+}
+
+function parsePointsTargetCommand(
+  message: string,
+  command: "/充值" | "/转积分",
+): { points: number; targetUserId?: number } | null {
+  const parts = splitParts(message);
+  if (parts[0] !== command || (parts.length !== 2 && parts.length !== 3)) return null;
+
+  const points = parseNumber(parts[1]);
+  if (points === null) return null;
+
+  if (parts.length === 2) {
+    return { points };
+  }
+
+  const targetUserId = parseNumber(parts[2]);
+  if (targetUserId === null) return null;
+  return { points, targetUserId };
+}
+
+function extractFirstMentionedUserId(
+  segments: MessageSegment[] | undefined,
+  options?: { selfId?: number | string },
+): number | undefined {
+  if (!Array.isArray(segments)) return undefined;
+  const selfIdText =
+    typeof options?.selfId === "number" || typeof options?.selfId === "string" ? String(options.selfId) : "";
+  for (const segment of segments) {
+    if (segment.type !== "at") continue;
+    const qq = segment.data?.qq;
+    if (qq === "all") continue;
+    const qqText = typeof qq === "number" || typeof qq === "string" ? String(qq).trim() : "";
+    if (!qqText) continue;
+    if (selfIdText && qqText === selfIdText) continue;
+    const parsed = Number(qqText);
+    if (!Number.isFinite(parsed) || parsed <= 0) continue;
+    return Math.floor(parsed);
+  }
+  return undefined;
+}
+
+function resolveTargetUserId(
+  context: CommandExecutionContext,
+  payload: unknown,
+): number | undefined {
+  const payloadTarget = (payload as { targetUserId?: number }).targetUserId;
+  if (typeof payloadTarget === "number" && Number.isFinite(payloadTarget) && payloadTarget > 0) {
+    return Math.floor(payloadTarget);
+  }
+  const selfId =
+    typeof context.event.self_id === "number" || typeof context.event.self_id === "string"
+      ? context.event.self_id
+      : undefined;
+  const segments = Array.isArray(context.event.message) ? (context.event.message as MessageSegment[]) : undefined;
+  return extractFirstMentionedUserId(segments, { selfId });
 }
 
 function parseOptionalGroupIdFromPayload(payload: unknown): number | undefined {
@@ -396,19 +466,18 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
     defineCommand({
       name: "recharge_points",
-      help: "/充值 <积分> <QQ号>",
+      help: "/充值 <积分> <QQ号|@目标>",
       cooldownExempt: true,
       parse(message) {
-        const parts = splitParts(message);
-        if (parts[0] !== "/充值" || parts.length !== 3) return null;
-
-        const points = parseNumber(parts[1]);
-        const userId = parseNumber(parts[2]);
-        if (points === null || userId === null) return null;
-        return { points, userId };
+        return parsePointsTargetCommand(message, "/充值");
       },
       async execute(context, payload) {
-        const { points, userId } = payload as { points: number; userId: number };
+        const { points } = payload as { points: number; targetUserId?: number };
+        const userId = resolveTargetUserId(context, payload);
+        if (!userId) {
+          await context.sendText("用法：/充值 <积分> <QQ号|@目标>");
+          return;
+        }
         const now =
           typeof context.event.time === "number" && Number.isFinite(context.event.time) && context.event.time > 0
             ? Math.floor(context.event.time * 1000)
@@ -416,6 +485,53 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         const result = activityStore.addUserPoints({ userId, points, now });
         const imageFile = await renderRechargeCard(result);
         await sendContextImage(context, imageFile);
+      },
+    }),
+    defineCommand({
+      name: "transfer_points",
+      access: "user",
+      help: "/转积分 <积分> <QQ号|@目标>",
+      cooldownExempt: true,
+      parse(message) {
+        return parsePointsTargetCommand(message, "/转积分");
+      },
+      async execute(context, payload) {
+        const { points } = payload as { points: number; targetUserId?: number };
+        const targetUserId = resolveTargetUserId(context, payload);
+        if (!targetUserId) {
+          await context.sendText("用法：/转积分 <积分> <QQ号|@目标>");
+          return;
+        }
+        if (targetUserId === context.userId) {
+          await context.sendText("不能给自己转积分");
+          return;
+        }
+
+        const senderName = getSenderNameFromEvent(context.event);
+        const now = resolveCommandNowMs(context);
+
+        try {
+          const receiverSnapshot = activityStore.getUserPoints({ userId: targetUserId });
+          const result = activityStore.transferUserPoints({
+            fromUserId: context.userId,
+            toUserId: targetUserId,
+            points,
+            fromUserName: senderName,
+            toUserName: receiverSnapshot.userName,
+            now,
+          });
+          const imageFile = await renderTransferCard(result);
+          await sendContextImage(context, imageFile);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
+          if (message.includes("insufficient points")) {
+            const pointsSnapshot = activityStore.getUserPoints({ userId: context.userId, userName: senderName });
+            await context.sendText(`积分不足，当前仅有 ${pointsSnapshot.totalPoints} 积分`);
+            return;
+          }
+          logger.warn("[activity] /转积分 失败:", error);
+          await context.sendText("转积分失败，请稍后重试");
+        }
       },
     }),
     defineCommand({
@@ -470,5 +586,15 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
     }),
   ];
+}
+
+function getSenderNameFromEvent(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  const sender = (event as { sender?: unknown }).sender;
+  if (!sender || typeof sender !== "object") return undefined;
+  const record = sender as { card?: unknown; nickname?: unknown };
+  if (typeof record.card === "string" && record.card.trim()) return record.card.trim();
+  if (typeof record.nickname === "string" && record.nickname.trim()) return record.nickname.trim();
+  return undefined;
 }
 

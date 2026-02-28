@@ -9,6 +9,7 @@ import type {
   DailyTalkStatsResult,
   TotalPointsRankResult,
   RechargePointsResult,
+  TransferPointsResult,
   SignInResult,
   TopEmojiItem,
 } from "./store";
@@ -717,5 +718,76 @@ export async function renderRechargeCard(result: RechargePointsResult): Promise<
   });
 
   return writeCardBuffer(canvas.toBuffer("image/png"), "recharge");
+}
+
+export async function renderTransferCard(result: TransferPointsResult): Promise<string> {
+  const width = 980;
+  const height = 560;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  const bg = ctx.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, "#6b52f5");
+  bg.addColorStop(1, "#4f67ec");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 30, "#f5f5f7");
+
+  drawText(ctx, "转账成功", width / 2, 110, {
+    font: 'bold 56px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+    color: "#2e2e34",
+    align: "center",
+  });
+  drawText(ctx, formatDateTimeCN(result.operatedAtMs), width / 2, 148, {
+    font: '22px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+    color: "#a8a8b0",
+    align: "center",
+  });
+
+  drawRoundedRect(ctx, 70, 185, width - 140, 98, 20, "#ececff");
+  const avatar = await loadAvatarImage(result.fromUserId);
+  drawAvatarImage(ctx, 88, 201, 64, avatar, result.fromUserName, 0);
+  drawText(ctx, result.fromUserName, 172, 243, {
+    font: 'bold 34px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+    color: "#4a47d6",
+  });
+  drawText(ctx, `转给 QQ ${result.toUserId}`, width - 100, 243, {
+    font: '24px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+    color: "#7f7fb0",
+    align: "right",
+  });
+
+  const boxes = [
+    { x: 70, y: 315, w: 250, title: "本次转出", value: `-${result.transferredPoints} 分` },
+    { x: 365, y: 315, w: 250, title: "我的剩余积分", value: `${result.fromTotalPoints} 分` },
+    { x: 660, y: 315, w: 250, title: "收款方", value: `QQ ${result.toUserId}` },
+  ];
+
+  for (const box of boxes) {
+    drawRoundedRect(ctx, box.x, box.y, box.w, 135, 18, "#ffffff");
+    ctx.strokeStyle = "#e8e8f0";
+    ctx.lineWidth = 2;
+    roundRect(ctx, box.x, box.y, box.w, 135, 18);
+    ctx.stroke();
+    drawText(ctx, box.value, box.x + box.w / 2, box.y + 62, {
+      font: 'bold 34px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+      color: "#5b55df",
+      align: "center",
+    });
+    drawText(ctx, box.title, box.x + box.w / 2, box.y + 102, {
+      font: '20px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+      color: "#9d9da8",
+      align: "center",
+    });
+  }
+
+  drawText(ctx, `积分已转入 ${result.toUserName}`, width / 2, 500, {
+    font: '22px "OvO Text", "OvO Emoji", "OvO CJK Fallback", "OvO Symbol Fallback"',
+    color: "#8d8d97",
+    align: "center",
+  });
+
+  return writeCardBuffer(canvas.toBuffer("image/png"), "transfer");
 }
 

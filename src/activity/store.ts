@@ -129,6 +129,17 @@ export type RechargePointsResult = {
   operatedAtMs: number;
 };
 
+export type TransferPointsResult = {
+  fromUserId: number;
+  fromUserName: string;
+  toUserId: number;
+  toUserName: string;
+  transferredPoints: number;
+  fromTotalPoints: number;
+  toTotalPoints: number;
+  operatedAtMs: number;
+};
+
 export type UserPointsSnapshot = {
   userId: number;
   userName: string;
@@ -906,6 +917,72 @@ export class ActivityStore {
       userName: profile.userName,
       totalPoints: profile.totalPoints,
       spentPoints: points,
+    };
+  }
+
+  transferUserPoints(input: {
+    fromUserId: number;
+    toUserId: number;
+    points: number;
+    fromUserName?: string;
+    toUserName?: string;
+    now?: number;
+  }): TransferPointsResult {
+    const fromUserId = Math.floor(input.fromUserId);
+    const toUserId = Math.floor(input.toUserId);
+    const points = Math.floor(input.points);
+    if (
+      !Number.isFinite(fromUserId) ||
+      fromUserId <= 0 ||
+      !Number.isFinite(toUserId) ||
+      toUserId <= 0 ||
+      !Number.isFinite(points) ||
+      points <= 0 ||
+      fromUserId === toUserId
+    ) {
+      throw new Error("invalid transfer params");
+    }
+
+    const globalBucket = getOrCreateGlobalSignInBucket(this.data);
+    const fromKey = String(fromUserId);
+    const toKey = String(toUserId);
+    const fromExistingProfile = globalBucket.profiles[fromKey] as Partial<SignInUserRecord> | undefined;
+    const toExistingProfile = globalBucket.profiles[toKey] as Partial<SignInUserRecord> | undefined;
+    const fromUserName =
+      (typeof input.fromUserName === "string" && input.fromUserName.trim()) ||
+      (typeof fromExistingProfile?.userName === "string" && fromExistingProfile.userName.trim()) ||
+      `用户${fromUserId}`;
+    const toUserName =
+      (typeof input.toUserName === "string" && input.toUserName.trim()) ||
+      (typeof toExistingProfile?.userName === "string" && toExistingProfile.userName.trim()) ||
+      `用户${toUserId}`;
+    const fromProfile = normalizeSignInProfile(fromExistingProfile, fromUserId, fromUserName);
+    const toProfile = normalizeSignInProfile(toExistingProfile, toUserId, toUserName);
+
+    if (fromProfile.totalPoints < points) {
+      throw new Error("insufficient points");
+    }
+
+    fromProfile.userName = fromUserName;
+    toProfile.userName = toUserName;
+    fromProfile.totalPoints -= points;
+    toProfile.totalPoints += points;
+    globalBucket.profiles[fromKey] = fromProfile;
+    globalBucket.profiles[toKey] = toProfile;
+    this.persist();
+
+    return {
+      fromUserId,
+      fromUserName: fromProfile.userName,
+      toUserId,
+      toUserName: toProfile.userName,
+      transferredPoints: points,
+      fromTotalPoints: fromProfile.totalPoints,
+      toTotalPoints: toProfile.totalPoints,
+      operatedAtMs:
+        typeof input.now === "number" && Number.isFinite(input.now) && input.now > 0
+          ? Math.floor(input.now)
+          : Date.now(),
     };
   }
 

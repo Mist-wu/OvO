@@ -5,6 +5,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
+import { ActivityStore } from "../src/activity/store";
 import { config } from "../src/config";
 import { ChatAgentLoop } from "../src/chat/agent_loop";
 import { ChatMemoryManager, extractFactCandidates } from "../src/chat/memory";
@@ -92,6 +93,71 @@ async function main() {
     const compactCommand = parseCommand("/记忆压缩 user 12345");
     assert.ok(compactCommand);
     assert.equal(compactCommand?.definition.name, "memory_compact");
+  });
+
+  await runTest("points commands parse supports numeric and @target forms", async () => {
+    const rechargeNumeric = parseCommand("/充值 10 123456");
+    assert.ok(rechargeNumeric);
+    assert.equal(rechargeNumeric?.definition.name, "recharge_points");
+    assert.deepEqual(rechargeNumeric?.payload, { points: 10, targetUserId: 123456 });
+
+    const rechargeMention = parseCommand("/充值 10");
+    assert.ok(rechargeMention);
+    assert.equal(rechargeMention?.definition.name, "recharge_points");
+    assert.deepEqual(rechargeMention?.payload, { points: 10 });
+
+    const transferNumeric = parseCommand("/转积分 8 654321");
+    assert.ok(transferNumeric);
+    assert.equal(transferNumeric?.definition.name, "transfer_points");
+    assert.deepEqual(transferNumeric?.payload, { points: 8, targetUserId: 654321 });
+
+    const transferMention = parseCommand("/转积分 8");
+    assert.ok(transferMention);
+    assert.equal(transferMention?.definition.name, "transfer_points");
+    assert.deepEqual(transferMention?.payload, { points: 8 });
+
+    assert.equal(parseCommand("/充值 0 123456"), null);
+    assert.equal(parseCommand("/转积分 0 123456"), null);
+  });
+
+  await runTest("activity store transfer points updates balances and validates params", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-points-transfer-"));
+    const filePath = path.join(tmpDir, "activity_stats.json");
+    const store = new ActivityStore(filePath);
+
+    const recharged = store.addUserPoints({
+      userId: 9001,
+      points: 30,
+      userName: "转出方",
+      now: 1700000000000,
+    });
+    assert.equal(recharged.totalPoints, 30);
+
+    const transferred = store.transferUserPoints({
+      fromUserId: 9001,
+      toUserId: 9002,
+      points: 12,
+      fromUserName: "转出方",
+      toUserName: "转入方",
+      now: 1700000001000,
+    });
+    assert.equal(transferred.transferredPoints, 12);
+    assert.equal(transferred.fromTotalPoints, 18);
+    assert.equal(transferred.toTotalPoints, 12);
+
+    const fromSnapshot = store.getUserPoints({ userId: 9001 });
+    const toSnapshot = store.getUserPoints({ userId: 9002 });
+    assert.equal(fromSnapshot.totalPoints, 18);
+    assert.equal(toSnapshot.totalPoints, 12);
+
+    assert.throws(
+      () => store.transferUserPoints({ fromUserId: 9001, toUserId: 9002, points: 99 }),
+      /insufficient points/,
+    );
+    assert.throws(
+      () => store.transferUserPoints({ fromUserId: 9001, toUserId: 9001, points: 1 }),
+      /invalid transfer params/,
+    );
   });
 
   await runTest("chat trigger requires @ in group chats", async () => {

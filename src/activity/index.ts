@@ -4,7 +4,15 @@ export type {
   DailyTalkStatsResult,
   TotalPointsRankResult,
   RechargePointsResult,
+  TransferPointsResult,
   SignInResult,
   TopEmojiItem,
 } from "./store";
-export { renderEmojiStatsCard, renderPointsRankingCard, renderRechargeCard, renderSignInCard, renderTalkStatsCard } from "./render";
+export {
+  renderEmojiStatsCard,
+  renderPointsRankingCard,
+  renderRechargeCard,
+  renderTransferCard,
+  renderSignInCard,
+  renderTalkStatsCard,
+} from "./render";
