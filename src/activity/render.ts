@@ -37,7 +37,7 @@ const EMBEDDED_MATH_FONT_FAMILY = "OvO Math";
 const EMBEDDED_SYMBOL_FONT_FAMILY = "OvO Symbol";
 const EMBEDDED_EMOJI_FONT_FAMILY = "OvO Emoji";
 const EMBEDDED_FALLBACK_TEXT_FONT_FAMILY = "OvO Fallback Text";
-const DEFAULT_FONT_STACK = '"OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif';
+const DEFAULT_FONT_STACK = '"OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif';
 const SYSTEM_TEXT_FONT_FAMILIES = [
   "ZCOOL KuaiLe",
   "ZCOOL QingKe HuangYou",
@@ -281,7 +281,7 @@ function drawAvatarFallback(
   ctx.fill();
   const initial = (userName.trim()[0] || "?").toUpperCase();
   drawText(ctx, initial, x + size / 2, y + size * 0.67, {
-    font: `bold ${Math.floor(size * 0.45)}px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif`,
+    font: `bold ${Math.floor(size * 0.45)}px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif`,
     color: "#fff",
     align: "center",
   });
@@ -342,17 +342,17 @@ async function drawRankingCard(options: {
   drawRoundedRect(ctx, 14, 14, width - 28, cardHeight, 20, "#f4f4f6");
 
   drawText(ctx, options.title, width / 2, 66, {
-    font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#2e2e34",
     align: "center",
   });
   drawText(ctx, options.subtitle, width / 2, 93, {
-    font: '14px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '14px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#9a9aa2",
     align: "center",
   });
   drawText(ctx, formatDateTimeCN(options.generatedAtMs), width / 2, 113, {
-    font: '14px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '14px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#b6b6bd",
     align: "center",
   });
@@ -363,7 +363,7 @@ async function drawRankingCard(options: {
 
   if (options.items.length <= 0) {
     drawText(ctx, "今天暂无数据", width / 2, startY + 80, {
-      font: '34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#666",
       align: "center",
     });
@@ -384,7 +384,7 @@ async function drawRankingCard(options: {
 
     drawRoundedRect(ctx, 32, rowY + 13, 32, 32, 9, rankBadgeColor(rank));
     drawText(ctx, String(rank), 48, rowY + 35, {
-      font: 'bold 18px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 18px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#fff",
       align: "center",
     });
@@ -393,23 +393,23 @@ async function drawRankingCard(options: {
     const avatarY = rowY + 10;
     drawAvatarImage(ctx, avatarX, avatarY, 36, avatarImages[index] ?? null, item.userName, index);
 
-    ctx.font = 'bold 18px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif';
+    ctx.font = 'bold 18px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif';
     const name = truncateText(ctx, item.userName, 300);
     drawText(ctx, name, 122, rowY + 31, {
-      font: 'bold 18px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 18px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#3a3a3f",
     });
 
     const valueText = `${item.count} ${options.unitLabel}`;
     drawText(ctx, valueText, width - 38, rowY + 31, {
-      font: 'bold 16px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 16px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#666",
       align: "right",
     });
 
     const percentText = `${(item.percent * 100).toFixed(1)}%`;
     drawText(ctx, percentText, 122, rowY + 55, {
-      font: '14px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '14px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: barColor,
     });
 
@@ -434,12 +434,12 @@ async function drawRankingCard(options: {
   ctx.stroke();
 
   drawText(ctx, String(options.summaryLeft.value), width * 0.25, summaryY, {
-    font: 'bold 28px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 28px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#5b55df",
     align: "center",
   });
   drawText(ctx, options.summaryLeft.label, width * 0.25, summaryY + 18, {
-    font: '12px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '12px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#b0b0b8",
     align: "center",
   });
@@ -450,12 +450,12 @@ async function drawRankingCard(options: {
   ctx.lineTo(width / 2, summaryY + 20);
   ctx.stroke();
   drawText(ctx, String(options.summaryRight.value), width * 0.75, summaryY, {
-    font: 'bold 28px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 28px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#5b55df",
     align: "center",
   });
   drawText(ctx, options.summaryRight.label, width * 0.75, summaryY + 18, {
-    font: '12px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '12px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#b0b0b8",
     align: "center",
   });
@@ -509,7 +509,7 @@ function drawEmojiTopItemPlaceholder(
   const bg = ["#f4b400", "#6c63ff", "#00b894"][index] ?? "#888";
   drawRoundedRect(ctx, x, y, size, size, 14, bg);
   drawText(ctx, label, x + size / 2, y + size / 2 - 6, {
-    font: 'bold 14px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 14px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#fff",
     align: "center",
     baseline: "middle",
@@ -532,14 +532,14 @@ async function drawEmojiTop3Panel(
   ctx.fillRect(0, 0, width, panelHeight);
 
   drawText(ctx, `今日最受欢迎表情包TOP${Math.max(1, Math.min(3, topEmojis.length || 3))}:`, 20, 54, {
-    font: 'bold 28px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 28px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#2e2e34",
   });
 
   const items = topEmojis.slice(0, 3);
   if (items.length <= 0) {
     drawText(ctx, "今天还没有表情包/表情使用记录", 20, 112, {
-      font: '20px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '20px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#6f6f78",
     });
     return { buffer: canvas.toBuffer("image/png"), height: panelHeight };
@@ -548,7 +548,7 @@ async function drawEmojiTop3Panel(
   for (const [index, item] of items.entries()) {
     const rowY = 78 + index * rowHeight;
     drawText(ctx, `${index + 1}. 使用次数: ${item.count}次`, 20, rowY + 22, {
-      font: 'bold 20px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 20px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#2e2e34",
     });
 
@@ -575,7 +575,7 @@ async function drawEmojiTop3Panel(
 
     if (item.kind !== "image") {
       drawText(ctx, item.label, thumbX + thumbSize + 16, thumbY + 34, {
-        font: '16px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+        font: '16px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
         color: "#666",
       });
     }
@@ -639,12 +639,12 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
   drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 30, "#f5f5f7");
 
   drawText(ctx, result.status === "signed" ? "签到成功" : "今日已签到", width / 2, 110, {
-    font: 'bold 56px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 56px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#2e2e34",
     align: "center",
   });
   drawText(ctx, formatDateTimeCN(result.signedAtMs), width / 2, 148, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#a8a8b0",
     align: "center",
   });
@@ -653,11 +653,11 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
   const signAvatar = await loadAvatarImage(result.userId);
   drawAvatarImage(ctx, 88, 201, 64, signAvatar, result.userName, 0);
   drawText(ctx, result.userName, 172, 243, {
-    font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#4a47d6",
   });
   drawText(ctx, `获得积分 +${result.rewardPoints}`, width - 100, 243, {
-    font: '24px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '24px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#7f7fb0",
     align: "right",
   });
@@ -675,19 +675,19 @@ export async function renderSignInCard(result: SignInResult): Promise<string> {
     roundRect(ctx, box.x, box.y, box.w, 135, 18);
     ctx.stroke();
     drawText(ctx, box.value, box.x + box.w / 2, box.y + 62, {
-      font: 'bold 38px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 38px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#5b55df",
       align: "center",
     });
     drawText(ctx, box.title, box.x + box.w / 2, box.y + 102, {
-      font: '20px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '20px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#9d9da8",
       align: "center",
     });
   }
 
   drawText(ctx, result.status === "signed" ? "今天也记一笔" : "已记录，明天再来", width / 2, 500, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#8d8d97",
     align: "center",
   });
@@ -710,12 +710,12 @@ export async function renderRechargeCard(result: RechargePointsResult): Promise<
   drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 30, "#f5f5f7");
 
   drawText(ctx, "充值成功", width / 2, 110, {
-    font: 'bold 56px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 56px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#2e2e34",
     align: "center",
   });
   drawText(ctx, formatDateTimeCN(result.operatedAtMs), width / 2, 148, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#a8a8b0",
     align: "center",
   });
@@ -724,11 +724,11 @@ export async function renderRechargeCard(result: RechargePointsResult): Promise<
   const avatar = await loadAvatarImage(result.userId);
   drawAvatarImage(ctx, 88, 201, 64, avatar, result.userName, 0);
   drawText(ctx, result.userName, 172, 243, {
-    font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#4a47d6",
   });
   drawText(ctx, `QQ ${result.userId}`, width - 100, 243, {
-    font: '24px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '24px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#7f7fb0",
     align: "right",
   });
@@ -746,19 +746,19 @@ export async function renderRechargeCard(result: RechargePointsResult): Promise<
     roundRect(ctx, box.x, box.y, box.w, 135, 18);
     ctx.stroke();
     drawText(ctx, box.value, box.x + box.w / 2, box.y + 62, {
-      font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#5b55df",
       align: "center",
     });
     drawText(ctx, box.title, box.x + box.w / 2, box.y + 102, {
-      font: '20px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '20px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#9d9da8",
       align: "center",
     });
   }
 
   drawText(ctx, "积分已计入全局累计", width / 2, 500, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#8d8d97",
     align: "center",
   });
@@ -781,12 +781,12 @@ export async function renderTransferCard(result: TransferPointsResult): Promise<
   drawRoundedRect(ctx, 32, 32, width - 64, height - 64, 30, "#f5f5f7");
 
   drawText(ctx, "转账成功", width / 2, 110, {
-    font: 'bold 56px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 56px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#2e2e34",
     align: "center",
   });
   drawText(ctx, formatDateTimeCN(result.operatedAtMs), width / 2, 148, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#a8a8b0",
     align: "center",
   });
@@ -795,11 +795,11 @@ export async function renderTransferCard(result: TransferPointsResult): Promise<
   const avatar = await loadAvatarImage(result.fromUserId);
   drawAvatarImage(ctx, 88, 201, 64, avatar, result.fromUserName, 0);
   drawText(ctx, result.fromUserName, 172, 243, {
-    font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#4a47d6",
   });
   drawText(ctx, `转给 QQ ${result.toUserId}`, width - 100, 243, {
-    font: '24px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '24px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#7f7fb0",
     align: "right",
   });
@@ -817,25 +817,26 @@ export async function renderTransferCard(result: TransferPointsResult): Promise<
     roundRect(ctx, box.x, box.y, box.w, 135, 18);
     ctx.stroke();
     drawText(ctx, box.value, box.x + box.w / 2, box.y + 62, {
-      font: 'bold 34px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: 'bold 34px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#5b55df",
       align: "center",
     });
     drawText(ctx, box.title, box.x + box.w / 2, box.y + 102, {
-      font: '20px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+      font: '20px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
       color: "#9d9da8",
       align: "center",
     });
   }
 
   drawText(ctx, `积分已转入 ${result.toUserName}`, width / 2, 500, {
-    font: '22px "OvO Text", "OvO Math", "OvO Symbol", "OvO Emoji", "OvO Fallback Text", sans-serif',
+    font: '22px "OvO Text", "OvO Emoji", "OvO Math", "OvO Symbol", "OvO Fallback Text", sans-serif',
     color: "#8d8d97",
     align: "center",
   });
 
   return writeCardBuffer(canvas.toBuffer("image/png"), "transfer");
 }
+
 
 
 
