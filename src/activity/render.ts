@@ -54,12 +54,15 @@ const EMBEDDED_CJK_FALLBACK_PATHS = [
   "NotoSansCJK-Regular.ttc",
   "SourceHanSansCN-Regular.otf",
   "WenQuanYiMicroHei.ttf",
+  "NotoSans-Regular.ttf",
+  "NotoSansMono-Regular.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_SYMBOL_FALLBACK_PATHS = [
   "NotoSansSymbols2-Regular.ttf",
   "NotoSansSymbols-Regular.ttf",
   "Symbola.ttf",
   "DejaVuSans.ttf",
+  "STIX2Math.otf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 
 let renderFontsInitialized = false;
@@ -68,14 +71,15 @@ function hasAnySystemFontFamily(candidates: string[]): boolean {
   return candidates.some((family) => GlobalFonts.has(family));
 }
 
-function registerFirstAvailableFont(family: string, candidates: string[]): string | undefined {
+function registerAvailableFonts(family: string, candidates: string[]): string[] {
+  const registered: string[] = [];
   for (const fontPath of candidates) {
     if (!fs.existsSync(fontPath)) continue;
     if (GlobalFonts.registerFromPath(fontPath, family)) {
-      return fontPath;
+      registered.push(fontPath);
     }
   }
-  return undefined;
+  return registered;
 }
 
 function ensureRenderFonts(): void {
@@ -93,19 +97,19 @@ function ensureRenderFonts(): void {
   };
 
   register(EMBEDDED_TEXT_FONT_PATH, EMBEDDED_TEXT_FONT_FAMILY);
-  const emoji = registerFirstAvailableFont(EMBEDDED_EMOJI_FONT_FAMILY, EMBEDDED_EMOJI_FONT_PATHS);
-  if (!emoji && !hasAnySystemFontFamily(SYSTEM_EMOJI_FALLBACK_FAMILIES)) {
+  const emoji = registerAvailableFonts(EMBEDDED_EMOJI_FONT_FAMILY, EMBEDDED_EMOJI_FONT_PATHS);
+  if (emoji.length <= 0 && !hasAnySystemFontFamily(SYSTEM_EMOJI_FALLBACK_FAMILIES)) {
     logger.warn(
       `[activity] 未找到 emoji 字体，建议添加到 assert/fonts: ${EMBEDDED_EMOJI_FONT_PATHS.map((item) => path.basename(item)).join(" / ")}`,
     );
   }
 
-  const cjk = registerFirstAvailableFont(EMBEDDED_CJK_FALLBACK_FONT_FAMILY, EMBEDDED_CJK_FALLBACK_PATHS);
-  if (!cjk && !hasAnySystemFontFamily(SYSTEM_CJK_FALLBACK_FAMILIES)) {
+  const cjk = registerAvailableFonts(EMBEDDED_CJK_FALLBACK_FONT_FAMILY, EMBEDDED_CJK_FALLBACK_PATHS);
+  if (cjk.length <= 0 && !hasAnySystemFontFamily(SYSTEM_CJK_FALLBACK_FAMILIES)) {
     logger.warn(`[activity] 未在 assert/fonts 找到 CJK 兜底字体，建议添加: ${EMBEDDED_CJK_FALLBACK_PATHS.map((item) => path.basename(item)).join(" / ")}`);
   }
-  const symbol = registerFirstAvailableFont(EMBEDDED_SYMBOL_FALLBACK_FONT_FAMILY, EMBEDDED_SYMBOL_FALLBACK_PATHS);
-  if (!symbol && !hasAnySystemFontFamily(SYSTEM_SYMBOL_FALLBACK_FAMILIES)) {
+  const symbol = registerAvailableFonts(EMBEDDED_SYMBOL_FALLBACK_FONT_FAMILY, EMBEDDED_SYMBOL_FALLBACK_PATHS);
+  if (symbol.length <= 0 && !hasAnySystemFontFamily(SYSTEM_SYMBOL_FALLBACK_FAMILIES)) {
     logger.warn(`[activity] 未在 assert/fonts 找到符号兜底字体，建议添加: ${EMBEDDED_SYMBOL_FALLBACK_PATHS.map((item) => path.basename(item)).join(" / ")}`);
   }
 }
