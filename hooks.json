@@ -1,0 +1,31 @@
+[
+  {
+    "id": "ovo-deploy",
+    "execute-command": "/root/OvO/redeploy.sh",
+    "command-working-directory": "/root/OvO",
+    "trigger-rule": {
+      "and": [
+        {
+          "match": {
+            "type": "payload-hash-sha256",
+            "secret": "db3rtl",
+            "parameter": {
+              "source": "header",
+              "name": "X-Hub-Signature-256"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "refs/heads/main",
+            "parameter": {
+              "source": "payload",
+              "name": "ref"
+            }
+          }
+        }
+      ]
+    }
+  }
+]
