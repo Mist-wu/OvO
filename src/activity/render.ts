@@ -18,11 +18,36 @@ const OUTPUT_DIR = path.resolve(process.cwd(), "data/render_cards");
 const AVATAR_DIR = path.resolve(process.cwd(), "data/qq_avatars");
 const EMBEDDED_FONT_DIR = path.resolve(process.cwd(), "assert/fonts");
 const EMBEDDED_TEXT_FONT_PATH = path.join(EMBEDDED_FONT_DIR, "ZCOOLKuaiLe-Regular.ttf");
-const EMBEDDED_EMOJI_FONT_PATH = path.join(EMBEDDED_FONT_DIR, "NotoColorEmoji-Regular.ttf");
+const EMBEDDED_EMOJI_FONT_PATHS = [
+  "NotoColorEmoji-Regular.ttf",
+  "NotoColorEmoji.ttf",
+].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_TEXT_FONT_FAMILY = "OvO Text";
 const EMBEDDED_EMOJI_FONT_FAMILY = "OvO Emoji";
 const EMBEDDED_CJK_FALLBACK_FONT_FAMILY = "OvO CJK Fallback";
 const EMBEDDED_SYMBOL_FALLBACK_FONT_FAMILY = "OvO Symbol Fallback";
+const SYSTEM_EMOJI_FALLBACK_FAMILIES = [
+  "Noto Color Emoji",
+  "Apple Color Emoji",
+  "Segoe UI Emoji",
+  "Twemoji Mozilla",
+];
+const SYSTEM_CJK_FALLBACK_FAMILIES = [
+  "Noto Sans CJK SC",
+  "Noto Sans SC",
+  "Source Han Sans CN",
+  "WenQuanYi Micro Hei",
+  "Microsoft YaHei",
+  "PingFang SC",
+  "SimHei",
+];
+const SYSTEM_SYMBOL_FALLBACK_FAMILIES = [
+  "Noto Sans Symbols 2",
+  "Noto Sans Symbols",
+  "Segoe UI Symbol",
+  "Symbola",
+  "DejaVu Sans",
+];
 const EMBEDDED_CJK_FALLBACK_PATHS = [
   "NotoSansSC-Regular.ttf",
   "NotoSansCJKsc-Regular.otf",
@@ -38,6 +63,10 @@ const EMBEDDED_SYMBOL_FALLBACK_PATHS = [
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 
 let renderFontsInitialized = false;
+
+function hasAnySystemFontFamily(candidates: string[]): boolean {
+  return candidates.some((family) => GlobalFonts.has(family));
+}
 
 function registerFirstAvailableFont(family: string, candidates: string[]): string | undefined {
   for (const fontPath of candidates) {
@@ -64,14 +93,19 @@ function ensureRenderFonts(): void {
   };
 
   register(EMBEDDED_TEXT_FONT_PATH, EMBEDDED_TEXT_FONT_FAMILY);
-  register(EMBEDDED_EMOJI_FONT_PATH, EMBEDDED_EMOJI_FONT_FAMILY);
+  const emoji = registerFirstAvailableFont(EMBEDDED_EMOJI_FONT_FAMILY, EMBEDDED_EMOJI_FONT_PATHS);
+  if (!emoji && !hasAnySystemFontFamily(SYSTEM_EMOJI_FALLBACK_FAMILIES)) {
+    logger.warn(
+      `[activity] 未找到 emoji 字体，建议添加到 assert/fonts: ${EMBEDDED_EMOJI_FONT_PATHS.map((item) => path.basename(item)).join(" / ")}`,
+    );
+  }
 
   const cjk = registerFirstAvailableFont(EMBEDDED_CJK_FALLBACK_FONT_FAMILY, EMBEDDED_CJK_FALLBACK_PATHS);
-  if (!cjk) {
+  if (!cjk && !hasAnySystemFontFamily(SYSTEM_CJK_FALLBACK_FAMILIES)) {
     logger.warn(`[activity] 未在 assert/fonts 找到 CJK 兜底字体，建议添加: ${EMBEDDED_CJK_FALLBACK_PATHS.map((item) => path.basename(item)).join(" / ")}`);
   }
   const symbol = registerFirstAvailableFont(EMBEDDED_SYMBOL_FALLBACK_FONT_FAMILY, EMBEDDED_SYMBOL_FALLBACK_PATHS);
-  if (!symbol) {
+  if (!symbol && !hasAnySystemFontFamily(SYSTEM_SYMBOL_FALLBACK_FAMILIES)) {
     logger.warn(`[activity] 未在 assert/fonts 找到符号兜底字体，建议添加: ${EMBEDDED_SYMBOL_FALLBACK_PATHS.map((item) => path.basename(item)).join(" / ")}`);
   }
 }
