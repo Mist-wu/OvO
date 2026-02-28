@@ -25,11 +25,13 @@ const EMBEDDED_MATH_FONT_PATHS = [
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_SYMBOL_FONT_PATHS = [
   "NotoSansCJKsc-Regular.otf",
+  "NotoSansSymbols2-Regular.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_FALLBACK_TEXT_FONT_PATHS = [
   "NotoSansCherokee-Regular.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_EMOJI_FONT_PATHS = [
+  "NotoSansSymbols2-Regular.ttf",
   "NotoColorEmoji.ttf",
 ].map((name) => path.join(EMBEDDED_FONT_DIR, name));
 const EMBEDDED_TEXT_FONT_FAMILY = "OvO Text";
@@ -65,6 +67,8 @@ const SYSTEM_EMOJI_FALLBACK_FAMILIES = [
   "Twemoji Mozilla",
 ];
 const SYSTEM_SYMBOL_FALLBACK_FAMILIES = [
+  "Noto Sans Symbols 2",
+  "Noto Sans Symbols",
   "Noto Sans CJK SC",
   "Noto Sans SC",
   "Source Han Sans CN",
