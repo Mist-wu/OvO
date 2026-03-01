@@ -78,6 +78,11 @@ async function sendGeneratedImage(context: CommandExecutionContext, generated: G
       await sendContextImage(context, toBase64PseudoUri(generated.dataBase64));
       return;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (isSendMessageTimeoutError(message)) {
+        // 发送超时类错误可能是“服务端已投递但回包超时”，避免回退再发导致重复图片
+        throw error;
+      }
       logger.warn("[draw] base64 直发失败，回退文件发送:", error);
     }
   }
