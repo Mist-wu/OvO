@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { logger } from "../../../utils/logger";
 import { activityStore, renderPointsRankingCard, renderSignInCard } from "../../../activity";
-import { generateGeminiImageWithInputs, type GeminiInlineImage } from "../../../llm";
+import { generateGeminiImageWithInputs, type GeminiGeneratedImage, type GeminiInlineImage } from "../../../llm";
 import { fetchWeatherSummary } from "../../../utils/weather";
 import { buildMessage, image as imageSegment, type MessageSegment } from "../../message";
 import type { CommandDefinition, CommandExecutionContext } from "../types";
@@ -18,6 +18,7 @@ const IMAGE_COST_POINTS = 6;
 const GENERATED_IMAGE_DIR = path.resolve(process.cwd(), "data/generated_images");
 const DRAW_REFERENCE_IMAGE_LIMIT = 6;
 const DRAW_AVATAR_CACHE_DIR = path.resolve(process.cwd(), "data/qq_avatars");
+const DRAW_DIRECT_BASE64_MAX_BYTES = 3 * 1024 * 1024;
 
 function defineCommand<Payload>(
   definition: CommandDefinition<Payload>,
@@ -57,6 +58,32 @@ function persistGeneratedImage(dataBase64: string, mimeType: string): string {
   const filePath = path.join(GENERATED_IMAGE_DIR, `gemini_${Date.now()}_${Math.random().toString(16).slice(2, 8)}${ext}`);
   fs.writeFileSync(filePath, buffer);
   return filePath;
+}
+
+function estimateBytesFromBase64(dataBase64: string): number {
+  const normalized = dataBase64.replace(/\s+/g, "");
+  if (!normalized) return 0;
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function toBase64PseudoUri(dataBase64: string): string {
+  return `base64://${dataBase64.replace(/\s+/g, "")}`;
+}
+
+async function sendGeneratedImage(context: CommandExecutionContext, generated: GeminiGeneratedImage): Promise<void> {
+  const payloadBytes = estimateBytesFromBase64(generated.dataBase64);
+  if (payloadBytes > 0 && payloadBytes <= DRAW_DIRECT_BASE64_MAX_BYTES) {
+    try {
+      await sendContextImage(context, toBase64PseudoUri(generated.dataBase64));
+      return;
+    } catch (error) {
+      logger.warn("[draw] base64 直发失败，回退文件发送:", error);
+    }
+  }
+
+  const imageFile = persistGeneratedImage(generated.dataBase64, generated.mimeType);
+  await sendContextImage(context, imageFile);
 }
 
 function parseCqParams(raw: string | undefined): Record<string, string> {
@@ -483,9 +510,7 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
             prompt: keywords,
             inlineImages: references.inlineImages,
           });
-          const imageFile = persistGeneratedImage(generated.dataBase64, generated.mimeType);
-
-          await sendContextImage(context, imageFile);
+          await sendGeneratedImage(context, generated);
 
           const spent = activityStore.spendUserPoints({
             userId: context.userId,
@@ -494,18 +519,19 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
           });
           await context.sendText(`已扣除 ${spent.spentPoints} 积分，剩余 ${spent.totalPoints} 积分`);
         } catch (error) {
-          logger.warn("[draw] /图 失败:", error);
           const message = error instanceof Error ? error.message : "";
+          if (isSendMessageTimeoutError(message)) {
+            logger.warn("[draw] /图 图片发送回包超时，可能稍后到达:", error);
+            return;
+          }
+
+          logger.warn("[draw] /图 失败:", error);
           if (message.includes("insufficient points")) {
             await context.sendText("积分不足，图片已生成但扣费时余额不足，请稍后重试");
             return;
           }
           if (message.includes("GEMINI_API_KEY")) {
             await context.sendText(message);
-            return;
-          }
-          if (isSendMessageTimeoutError(message)) {
-            await context.sendText("图片发送超时，可能已发送成功；若未收到请稍后重试（本次未扣除积分）");
             return;
           }
           if (message.includes("aborted service=gemini operation=generate_image")) {
