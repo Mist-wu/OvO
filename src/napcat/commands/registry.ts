@@ -7,22 +7,36 @@ type HelpScope = "root" | "user";
 let commandRegistry: CommandDefinition<unknown>[] = [];
 
 function getCommandHelpText(scope: HelpScope): string {
-  const helps = commandRegistry
+  const entries = commandRegistry
     .filter((definition) => {
       if (!definition.help) return false;
       const access = definition.access ?? "root";
       if (scope === "root") return true;
       return access === "user";
-    })
-    .map((definition) => definition.help?.trim() || "")
-    .filter(Boolean);
+    });
 
   const preferred = scope === "root" ? "/help" : "/帮助";
-  helps.sort((a, b) => {
-    if (a === preferred && b !== preferred) return -1;
-    if (b === preferred && a !== preferred) return 1;
-    return 0;
-  });
+  const helps = entries
+    .map((definition, index) => ({
+      help: definition.help?.trim() || "",
+      access: definition.access ?? "root",
+      index,
+    }))
+    .filter((item) => Boolean(item.help))
+    .sort((a, b) => {
+      if (a.help === preferred && b.help !== preferred) return -1;
+      if (b.help === preferred && a.help !== preferred) return 1;
+
+      // /help 视图下，管理员指令固定排在普通用户指令前，组内保持注册顺序。
+      if (scope === "root") {
+        const aOrder = a.access === "root" ? 0 : 1;
+        const bOrder = b.access === "root" ? 0 : 1;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+      }
+
+      return a.index - b.index;
+    })
+    .map((item) => item.help);
 
   return helps.join("\n");
 }
