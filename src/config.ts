@@ -75,6 +75,7 @@ export const config = {
     reconnectMs: numberFromEnv(process.env.NAPCAT_RECONNECT_MS, 1000),
     heartbeatTimeoutMs: numberFromEnv(process.env.NAPCAT_HEARTBEAT_TIMEOUT_MS, 15000),
     actionTimeoutMs: numberFromEnv(process.env.NAPCAT_ACTION_TIMEOUT_MS, 10000),
+    actionImageTimeoutMs: numberFromEnv(process.env.NAPCAT_ACTION_IMAGE_TIMEOUT_MS, 30000),
     actionLog: {
       enabled: booleanFromEnv(process.env.NAPCAT_ACTION_LOG_ENABLED, true),
       level: (["error", "warn", "info", "debug"] as const).find(

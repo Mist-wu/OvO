@@ -376,6 +376,10 @@ async function collectDrawReferenceImages(
   return { inlineImages, labels };
 }
 
+function isSendMessageTimeoutError(message: string): boolean {
+  return message.includes("action=send_group_msg timeout") || message.includes("action=send_private_msg timeout");
+}
+
 export function createUserCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {
   return [
     defineCommand({
@@ -494,6 +498,10 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
           }
           if (message.includes("GEMINI_API_KEY")) {
             await context.sendText(message);
+            return;
+          }
+          if (isSendMessageTimeoutError(message)) {
+            await context.sendText("图片发送超时，可能已发送成功；若未收到请稍后重试（本次未扣除积分）");
             return;
           }
           if (message.includes("aborted service=gemini operation=generate_image")) {

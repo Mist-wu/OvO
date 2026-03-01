@@ -52,6 +52,27 @@ type RuntimeStatus = {
   rateLimitWaitMsTotal: number;
 };
 
+const SEND_PRIVATE_MSG_ACTION = "send_private_msg";
+const SEND_GROUP_MSG_ACTION = "send_group_msg";
+
+function isSendMessageAction(action: string): boolean {
+  return action === SEND_PRIVATE_MSG_ACTION || action === SEND_GROUP_MSG_ACTION;
+}
+
+function hasImageSegmentInActionParams(params: Record<string, unknown>): boolean {
+  const message = params.message;
+  if (!Array.isArray(message)) return false;
+
+  return message.some((segment) => {
+    if (!segment || typeof segment !== "object") return false;
+    return (segment as { type?: unknown }).type === "image";
+  });
+}
+
+function isTimeoutActionError(error: Error): boolean {
+  return error.message.includes("timeout");
+}
+
 
 
 export function calculateActionRetryDelayMs(
@@ -453,7 +474,7 @@ export class NapcatClient {
         const normalizedError = this.toError(error);
         lastError = normalizedError;
 
-        if (attempt < this.actionRetryAttempts && this.shouldRetryAction(normalizedError)) {
+        if (attempt < this.actionRetryAttempts && this.shouldRetryAction(action, normalizedError)) {
           const delayMs = this.getRetryDelayMs(attempt);
           this.retryCount += 1;
           this.logAction(
@@ -485,7 +506,7 @@ export class NapcatClient {
 
     const payload = { action, params, echo };
     return new Promise<ActionResponse>((resolve, reject) => {
-      const timeoutMs = Math.max(1000, config.napcat.actionTimeoutMs);
+      const timeoutMs = this.getActionTimeoutMs(action, params);
       const timer = setTimeout(() => {
         this.pendingActions.delete(echo);
         this.logAction(
@@ -599,7 +620,18 @@ export class NapcatClient {
     }
   }
 
-  private shouldRetryAction(error: Error): boolean {
+  private getActionTimeoutMs(action: string, params: Record<string, unknown>): number {
+    const baseTimeoutMs = Math.max(1000, config.napcat.actionTimeoutMs);
+    if (!isSendMessageAction(action)) return baseTimeoutMs;
+    if (!hasImageSegmentInActionParams(params)) return baseTimeoutMs;
+    return Math.max(baseTimeoutMs, Math.floor(config.napcat.actionImageTimeoutMs));
+  }
+
+  private shouldRetryAction(action: string, error: Error): boolean {
+    if (isSendMessageAction(action) && isTimeoutActionError(error)) {
+      return false;
+    }
+
     const text = error.message;
     return (
       text.includes("timeout") ||
