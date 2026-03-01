@@ -89,6 +89,18 @@ async function createMockServer() {
         return;
       }
 
+      if (payload.action === "send_private_msg" && messageToText(params.message) === "retcode_timeout_no_retry_probe") {
+        ws.send(
+          JSON.stringify({
+            status: "failed",
+            retcode: 1200,
+            wording: "Timeout: mock service timeout",
+            echo: payload.echo,
+          }),
+        );
+        return;
+      }
+
       if (payload.action === "fail_action") {
         ws.send(
           JSON.stringify({
@@ -1185,6 +1197,29 @@ async function main() {
         (item) =>
           item.action === "send_private_msg" &&
           messageToText(item.params.message) === "timeout_no_retry_probe",
+      );
+      assert.equal(sent.length, 1);
+      const retryCountAfter = client.getRuntimeStatus().retryCount;
+      assert.equal(retryCountAfter, retryCountBefore);
+    });
+
+    await runTest("send message retcode timeout does not retry to avoid duplicates", async () => {
+      server.actions.length = 0;
+      const retryCountBefore = client.getRuntimeStatus().retryCount;
+
+      await assert.rejects(
+        () =>
+          client.sendAction("send_private_msg", {
+            user_id: 11111,
+            message: [{ type: "text", data: { text: "retcode_timeout_no_retry_probe" } }],
+          }),
+        /retcode=1200/,
+      );
+
+      const sent = server.actions.filter(
+        (item) =>
+          item.action === "send_private_msg" &&
+          messageToText(item.params.message) === "retcode_timeout_no_retry_probe",
       );
       assert.equal(sent.length, 1);
       const retryCountAfter = client.getRuntimeStatus().retryCount;
