@@ -85,6 +85,10 @@ async function createMockServer() {
         return;
       }
 
+      if (payload.action === "send_private_msg" && messageToText(params.message) === "timeout_no_retry_probe") {
+        return;
+      }
+
       if (payload.action === "fail_action") {
         ws.send(
           JSON.stringify({
@@ -157,6 +161,24 @@ async function createMockServer() {
             }),
           );
         }, 120);
+        return;
+      }
+
+      if (
+        (payload.action === "send_private_msg" || payload.action === "send_group_msg") &&
+        messageFirstImageFile(params.message) === "delay://image_ack"
+      ) {
+        setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          ws.send(
+            JSON.stringify({
+              status: "ok",
+              retcode: 0,
+              data: { ok: true },
+              echo: payload.echo,
+            }),
+          );
+        }, 350);
         return;
       }
 
@@ -252,6 +274,17 @@ function messageHasImage(message: unknown): boolean {
   });
 }
 
+function messageFirstImageFile(message: unknown): string {
+  if (!Array.isArray(message)) return "";
+  for (const segment of message) {
+    if (!segment || typeof segment !== "object") continue;
+    if ((segment as { type?: unknown }).type !== "image") continue;
+    const file = (segment as { data?: { file?: unknown } }).data?.file;
+    return typeof file === "string" ? file : "";
+  }
+  return "";
+}
+
 async function runTest(name: string, fn: () => Promise<void>) {
   try {
     await fn();
@@ -303,6 +336,7 @@ async function main() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-"));
   process.env.NAPCAT_WS_URL = `ws://127.0.0.1:${server.port}`;
   process.env.NAPCAT_ACTION_TIMEOUT_MS = "200";
+  process.env.NAPCAT_ACTION_IMAGE_TIMEOUT_MS = "800";
   process.env.NAPCAT_ACTION_LOG_ENABLED = "false";
   process.env.NAPCAT_ACTION_QUEUE_CONCURRENCY = "1";
   process.env.NAPCAT_ACTION_QUEUE_MAX_SIZE = "200";
@@ -1111,6 +1145,50 @@ async function main() {
       assert.equal(sent.length, 2);
       const retryCountAfter = client.getRuntimeStatus().retryCount;
       assert.equal(retryCountAfter > retryCountBefore, true);
+    });
+
+    await runTest("image send action uses extended timeout window", async () => {
+      server.actions.length = 0;
+      const response = await client.sendAction("send_private_msg", {
+        user_id: 11111,
+        message: [
+          {
+            type: "image",
+            data: {
+              file: "delay://image_ack",
+            },
+          },
+        ],
+      });
+      assert.equal(response.status, "ok");
+
+      const sent = server.actions.filter(
+        (item) => item.action === "send_private_msg" && messageFirstImageFile(item.params.message) === "delay://image_ack",
+      );
+      assert.equal(sent.length, 1);
+    });
+
+    await runTest("send message timeout does not retry to avoid duplicates", async () => {
+      server.actions.length = 0;
+      const retryCountBefore = client.getRuntimeStatus().retryCount;
+
+      await assert.rejects(
+        () =>
+          client.sendAction("send_private_msg", {
+            user_id: 11111,
+            message: [{ type: "text", data: { text: "timeout_no_retry_probe" } }],
+          }),
+        /timeout/,
+      );
+
+      const sent = server.actions.filter(
+        (item) =>
+          item.action === "send_private_msg" &&
+          messageToText(item.params.message) === "timeout_no_retry_probe",
+      );
+      assert.equal(sent.length, 1);
+      const retryCountAfter = client.getRuntimeStatus().retryCount;
+      assert.equal(retryCountAfter, retryCountBefore);
     });
 
     await runTest("action timeout rejects", async () => {
