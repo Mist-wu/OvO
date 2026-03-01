@@ -377,7 +377,11 @@ async function collectDrawReferenceImages(
 }
 
 function isSendMessageTimeoutError(message: string): boolean {
-  return message.includes("action=send_group_msg timeout") || message.includes("action=send_private_msg timeout");
+  const normalized = message.toLowerCase();
+  const isSendMessageAction =
+    normalized.includes("action=send_group_msg") || normalized.includes("action=send_private_msg");
+  if (!isSendMessageAction) return false;
+  return normalized.includes("timeout") || normalized.includes("retcode=1200");
 }
 
 export function createUserCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {

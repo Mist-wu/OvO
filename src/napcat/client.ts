@@ -70,7 +70,7 @@ function hasImageSegmentInActionParams(params: Record<string, unknown>): boolean
 }
 
 function isTimeoutActionError(error: Error): boolean {
-  return error.message.includes("timeout");
+  return error.message.toLowerCase().includes("timeout");
 }
 
 
@@ -632,13 +632,13 @@ export class NapcatClient {
       return false;
     }
 
-    const text = error.message;
+    const text = error.message.toLowerCase();
     return (
       text.includes("timeout") ||
-      text.includes("WebSocket 未连接") ||
-      text.includes("WebSocket closed") ||
-      text.includes("ECONNRESET") ||
-      text.includes("EPIPE")
+      text.includes("websocket 未连接") ||
+      text.includes("websocket closed") ||
+      text.includes("econnreset") ||
+      text.includes("epipe")
     );
   }
 
