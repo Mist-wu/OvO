@@ -13,6 +13,7 @@
 ## Docs
 - NapCat API: `context/napcat_api.md` (when writing NapCat adapters, consult this doc proactively)
 - Gemini API codegen instructions: `https://github.com/googleapis/js-genai/blob/main/codegen_instructions.md`
+- Google Agent Development Kit: `https://google.github.io/adk-docs/llms.txt`
 
 ## NapCat 适配策略
 - 以 OneBot v11 事件/动作字段为准，优先查 `context/napcat_api.md`，不要凭记忆硬编码字段名。
