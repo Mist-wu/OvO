@@ -42,15 +42,6 @@ function externalServiceConfig(
   };
 }
 
-function stringListFromEnv(value: string | undefined, fallback: string[]): string[] {
-  if (!value) return fallback;
-  const items = value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : fallback;
-}
-
 function quoteModeFromEnv(value: string | undefined): "auto" | "on" | "off" {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "on" || normalized === "off" || normalized === "auto") {
@@ -116,71 +107,16 @@ export const config = {
   },
   chat: {
     enabled: booleanFromEnv(process.env.CHAT_ENABLED, true),
-    maxSessionMessages: numberFromEnv(process.env.CHAT_MAX_SESSION_MESSAGES, 16),
-    groupTriggerMode: process.env.CHAT_GROUP_TRIGGER_MODE?.trim() || "passive",
-    botAliases: stringListFromEnv(process.env.CHAT_BOT_ALIASES, ["小o", "ovo"]),
     emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
     maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 1000),
-    personaName: process.env.CHAT_PERSONA_NAME?.trim() || "小o",
     mediaEnabled: booleanFromEnv(process.env.CHAT_MEDIA_ENABLED, true),
     mediaMaxImages: numberFromEnv(process.env.CHAT_MEDIA_MAX_IMAGES, 2),
     mediaFetchTimeoutMs: numberFromEnv(process.env.CHAT_MEDIA_FETCH_TIMEOUT_MS, 12000),
     mediaMaxBytes: numberFromEnv(process.env.CHAT_MEDIA_MAX_BYTES, 5 * 1024 * 1024),
-    memoryEnabled: booleanFromEnv(process.env.CHAT_MEMORY_ENABLED, true),
-    memoryPath: process.env.CHAT_MEMORY_PATH?.trim() || "data/chat_memory.json",
-    memoryMaxFactsPerUser: numberFromEnv(process.env.CHAT_MEMORY_MAX_FACTS_PER_USER, 40),
-    memoryContextFactCount: numberFromEnv(process.env.CHAT_MEMORY_CONTEXT_FACT_COUNT, 8),
-    summaryContextCount: numberFromEnv(process.env.CHAT_SUMMARY_CONTEXT_COUNT, 2),
-    summaryArchiveTriggerMessages: numberFromEnv(
-      process.env.CHAT_SUMMARY_ARCHIVE_TRIGGER_MESSAGES,
-      12,
-    ),
-    summaryArchiveChunkMessages: numberFromEnv(process.env.CHAT_SUMMARY_ARCHIVE_CHUNK_MESSAGES, 6),
-    summaryArchiveKeepLatestMessages: numberFromEnv(
-      process.env.CHAT_SUMMARY_ARCHIVE_KEEP_LATEST_MESSAGES,
-      8,
-    ),
-    summaryArchiveMaxPerSession: numberFromEnv(process.env.CHAT_SUMMARY_ARCHIVE_MAX_PER_SESSION, 30),
-    proactiveEnabled: booleanFromEnv(process.env.CHAT_PROACTIVE_ENABLED, true),
-    proactiveIdleMs: numberFromEnv(process.env.CHAT_PROACTIVE_IDLE_MS, 4 * 60 * 1000),
-    proactiveContinueIdleMs: numberFromEnv(
-      process.env.CHAT_PROACTIVE_CONTINUE_IDLE_MS,
-      90 * 1000,
-    ),
-    proactiveMinGapMs: numberFromEnv(process.env.CHAT_PROACTIVE_MIN_GAP_MS, 6 * 60 * 1000),
-    proactiveBubbleIntervalMs: numberFromEnv(
-      process.env.CHAT_PROACTIVE_BUBBLE_INTERVAL_MS,
-      25 * 60 * 1000,
-    ),
-    proactiveMinRecentMessages: numberFromEnv(process.env.CHAT_PROACTIVE_MIN_RECENT_MESSAGES, 6),
-    proactiveMaxPerTick: numberFromEnv(process.env.CHAT_PROACTIVE_MAX_PER_TICK, 1),
-    stateUserTtlMs: numberFromEnv(process.env.CHAT_STATE_USER_TTL_MS, 24 * 60 * 60 * 1000),
-    stateGroupTtlMs: numberFromEnv(process.env.CHAT_STATE_GROUP_TTL_MS, 24 * 60 * 60 * 1000),
-    stateSessionTtlMs: numberFromEnv(process.env.CHAT_STATE_SESSION_TTL_MS, 6 * 60 * 60 * 1000),
-    stateUserMax: numberFromEnv(process.env.CHAT_STATE_USER_MAX, 2000),
-    stateGroupMax: numberFromEnv(process.env.CHAT_STATE_GROUP_MAX, 300),
-    stateSessionMax: numberFromEnv(process.env.CHAT_STATE_SESSION_MAX, 3000),
-    statePruneIntervalMs: numberFromEnv(process.env.CHAT_STATE_PRUNE_INTERVAL_MS, 60 * 1000),
     quoteMode: quoteModeFromEnv(process.env.CHAT_QUOTE_MODE),
-    styleVariantEnabled: booleanFromEnv(process.env.CHAT_STYLE_VARIANT_ENABLED, true),
-    styleSwitchProb: numberFromEnv(process.env.CHAT_STYLE_SWITCH_PROB, 0.35),
     humanizeEnabled: booleanFromEnv(process.env.CHAT_HUMANIZE_ENABLED, true),
     humanizeTypoProb: numberFromEnv(process.env.CHAT_HUMANIZE_TYPO_PROB, 0.06),
     humanizeSplitProb: numberFromEnv(process.env.CHAT_HUMANIZE_SPLIT_PROB, 0.25),
-    plannerWaitEnabled: booleanFromEnv(process.env.CHAT_PLANNER_WAIT_ENABLED, true),
-    plannerWaitGroupExtraMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_GROUP_EXTRA_MS, 900),
-    plannerWaitPrivateExtraMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_PRIVATE_EXTRA_MS, 420),
-    plannerWaitMaxMs: numberFromEnv(process.env.CHAT_PLANNER_WAIT_MAX_MS, 2600),
-    plannerCompleteTalkEnabled: booleanFromEnv(process.env.CHAT_PLANNER_COMPLETE_TALK_ENABLED, true),
-    adaptivePersonaEnabled: booleanFromEnv(process.env.CHAT_ADAPTIVE_PERSONA_ENABLED, true),
-    triggerSilenceCompensationEnabled: booleanFromEnv(
-      process.env.CHAT_TRIGGER_SILENCE_COMPENSATION_ENABLED,
-      true,
-    ),
-    triggerSilenceCompensationMax: numberFromEnv(
-      process.env.CHAT_TRIGGER_SILENCE_COMPENSATION_MAX,
-      0.14,
-    ),
   },
   llm: {
     gemini: {
