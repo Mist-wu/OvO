@@ -106,10 +106,16 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   const userId = event.user_id;
   if (typeof userId !== "number") return;
 
-  const quotedMessage = await resolveQuotedMessage(client, event);
   const visibleMessage = getChatVisibleText(event) || message;
-  const chatEvent = toChatEvent(event, visibleMessage, quotedMessage);
-  const reply = await chatOrchestrator.handle(chatEvent);
+  const baseChatEvent = toChatEvent(event, visibleMessage);
+  const decision = chatOrchestrator.decide(baseChatEvent);
+  if (!decision.shouldReply) {
+    return;
+  }
+
+  const quotedMessage = await resolveQuotedMessage(client, event);
+  const chatEvent = quotedMessage ? { ...baseChatEvent, quotedMessage } : baseChatEvent;
+  const reply = await chatOrchestrator.handle(chatEvent, decision);
   if (!reply || !reply.text.trim()) {
     return;
   }

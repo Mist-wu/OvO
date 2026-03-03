@@ -5,9 +5,6 @@ import { decideTrigger } from "./trigger";
 import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 
 export type PreparedChatReply = {
-  event: ChatEvent;
-  sessionKey: string;
-  normalizedUserText: string;
   reply: ChatReply;
 };
 
@@ -33,7 +30,7 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
         willingness: 0,
       };
     }
-    return decideTrigger(event, config.chat.botAliases);
+    return decideTrigger(event);
   }
 
   async prepare(
@@ -70,9 +67,6 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
         : undefined;
 
     return {
-      event,
-      sessionKey: event.scope === "group" ? `g:${event.groupId ?? 0}` : `p:${event.userId}`,
-      normalizedUserText: summarizeUserMessage(event.text, visuals.length),
       reply: {
         ...generated,
         quoteMessageId,
@@ -112,15 +106,6 @@ function buildMinimalPrompt(event: ChatEvent, _mediaCount: number): string {
     .join("\n");
 }
 
-function summarizeUserMessage(text: string, mediaCount: number): string {
-  const normalizedText = text.trim();
-  if (normalizedText && mediaCount <= 0) return normalizedText;
-  if (!normalizedText && mediaCount > 0) return `[图片/表情包 x${mediaCount}]`;
-  if (normalizedText && mediaCount > 0) return `${normalizedText} [图片/表情包 x${mediaCount}]`;
-  return "(空消息)";
-}
-
 export function createChatOrchestrator(): ChatOrchestrator {
   return new MinimalChatOrchestrator();
 }
-

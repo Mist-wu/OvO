@@ -34,10 +34,6 @@ export type ChatVisualInput = {
 export type TriggerReason =
   | "private_default"
   | "mentioned"
-  | "replied_to_bot"
-  | "named_bot"
-  | "group_willing"
-  | "group_disabled"
   | "empty_text"
   | "not_triggered";
 
@@ -51,23 +47,6 @@ export type TriggerDecision = {
   willingness: number;
 };
 
-export type SessionRole = "user" | "assistant";
-
-export type SessionMessage = {
-  role: SessionRole;
-  text: string;
-  ts: number;
-  speakerName?: string;
-  sourceMessageId?: number | string;
-};
-
-export type PersonaProfile = {
-  name: string;
-  style: string;
-  doNot: string[];
-  replyLength: "short" | "medium";
-};
-
 export type ChatReply = {
   text: string;
   from: "llm" | "fallback" | "tool";
@@ -75,6 +54,4 @@ export type ChatReply = {
   priority?: ReplyPriority;
   willingness?: number;
   quoteMessageId?: number | string;
-  plannerReason?: string;
-  styleVariant?: "default" | "warm" | "playful" | "concise";
 };

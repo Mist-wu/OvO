@@ -28,31 +28,6 @@ function isLikelyUnfinishedText(text: string): boolean {
   return false;
 }
 
-function getTopicScore(text: string, hasVisual: boolean): number {
-  const normalized = text.trim().toLowerCase();
-  if (!normalized) {
-    return hasVisual ? 0.15 : 0;
-  }
-
-  let score = 0;
-
-  if (/[?？]/.test(normalized)) score += 0.22;
-  if (/(怎么|为啥|为什么|如何|吗|求|帮忙|建议|推荐|能不能)/.test(normalized)) score += 0.18;
-  if (/(机器人|bot|小o|ovo|代码|报错|bug|项目|天气|汇率|时间|计算)/.test(normalized)) score += 0.22;
-  if (/(谢谢|辛苦|麻烦)/.test(normalized)) score += 0.05;
-  if (hasVisual) score += 0.08;
-
-  if (/^(哈哈+|hhh+|6+|哦+|嗯+|ok+|好的+|(?:\?|？)+)$/i.test(normalized)) {
-    score -= 0.2;
-  }
-
-  if (normalized.length >= 30) {
-    score += 0.08;
-  }
-
-  return score;
-}
-
 function getPrivateWaitMs(text: string, hasVisual: boolean): number {
   if (!text.trim() && hasVisual) return 350;
   return isLikelyUnfinishedText(text) ? 800 : 220;
@@ -60,13 +35,10 @@ function getPrivateWaitMs(text: string, hasVisual: boolean): number {
 
 export function decideTrigger(
   event: ChatEvent,
-  _aliases: string[],
-  hints?: Record<string, unknown>,
 ): TriggerDecision {
   const text = event.text.trim();
   const hasVisual = hasVisualSegments(event.segments);
   const hasContent = text.length > 0 || hasVisual;
-  void hints;
 
   if (event.scope === "private") {
     if (!hasContent) {
