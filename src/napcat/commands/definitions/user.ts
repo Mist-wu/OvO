@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { logger } from "../../../utils/logger";
 import { activityStore, renderPointsRankingCard, renderSignInCard } from "../../../activity";
 import { generateGeminiImageWithInputs, type GeminiGeneratedImage, type GeminiInlineImage } from "../../../llm";
+import { ExternalCallError } from "../../../utils/external_call";
 import { fetchWeatherSummary } from "../../../utils/weather";
 import { buildMessage, image as imageSegment, type MessageSegment } from "../../message";
 import type { CommandDefinition, CommandExecutionContext } from "../types";
@@ -416,6 +417,14 @@ function isSendMessageTimeoutError(message: string): boolean {
   return normalized.includes("timeout") || normalized.includes("retcode=1200");
 }
 
+function isGeminiImageTimeoutError(error: unknown): boolean {
+  if (!(error instanceof ExternalCallError)) return false;
+  if (error.service !== "gemini" || error.operation !== "generate_image") return false;
+  if (error.reason === "circuit_open" || error.retryable) return true;
+  const causeMessage = error.cause instanceof Error ? error.cause.message.toLowerCase() : "";
+  return causeMessage.includes("timeout") || causeMessage.includes("timed out");
+}
+
 export function createUserCommands(getHelpText: HelpTextProvider): CommandDefinition<unknown>[] {
   return [
     defineCommand({
@@ -529,6 +538,14 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
             logger.warn("[draw] /图 图片发送回包超时，可能稍后到达:", error);
             return;
           }
+          if (
+            isGeminiImageTimeoutError(error) ||
+            message.includes("aborted service=gemini operation=generate_image")
+          ) {
+            logger.warn("[draw] /图 超时或线路拥堵，未扣积分:", error);
+            await context.sendText("生图超时，未扣除积分，请稍后重试（可尝试减少关键词）");
+            return;
+          }
 
           logger.warn("[draw] /图 失败:", error);
           if (message.includes("insufficient points")) {
@@ -537,10 +554,6 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
           }
           if (message.includes("GEMINI_API_KEY")) {
             await context.sendText(message);
-            return;
-          }
-          if (message.includes("aborted service=gemini operation=generate_image")) {
-            await context.sendText("生图超时，未扣除积分，请稍后重试（可尝试减少关键词）");
             return;
           }
           await context.sendText("生图失败，未扣除积分，请稍后再试");

@@ -13,23 +13,28 @@ export type GeminiGeneratedImage = {
   dataBase64: string;
 };
 
+type GeminiSdkClientOptions = {
+  timeoutMs?: number;
+};
+
 function normalizeBaseUrl(input: string): string | undefined {
   const trimmed = input.trim();
   if (!trimmed) return undefined;
   return trimmed.replace(/\/+$/, "");
 }
 
-export function createGeminiSdkClient(): GoogleGenAI {
+export function createGeminiSdkClient(options?: GeminiSdkClientOptions): GoogleGenAI {
   const apiKey = config.llm.gemini.apiKey.trim();
   if (!apiKey) {
     throw new Error("[llm] Gemini 未配置：请在 .env 中设置 GEMINI_API_KEY");
   }
 
   const baseUrl = normalizeBaseUrl(config.llm.gemini.baseUrl);
+  const timeoutMs = options?.timeoutMs ?? config.llm.gemini.timeoutMs;
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
-      timeout: config.llm.gemini.timeoutMs,
+      timeout: timeoutMs,
       ...(baseUrl ? { baseUrl } : {}),
     },
   });
@@ -83,7 +88,9 @@ export async function generateGeminiImageWithInputs(input: {
       },
     },
     async () => {
-      const client = createGeminiSdkClient();
+      const client = createGeminiSdkClient({
+        timeoutMs: config.llm.gemini.imageTimeoutMs,
+      });
       const interaction = await client.interactions.create({
         model: getGeminiImageModel(),
         input:
