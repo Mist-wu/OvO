@@ -1,5 +1,4 @@
 export {
-  askGemini,
   askGeminiWithImages,
   createGeminiSdkClient,
   generateGeminiImage,

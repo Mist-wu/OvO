@@ -48,13 +48,6 @@ export function getGeminiSetupSummary(): string {
   return `llm=gemini model=${config.llm.gemini.model} configured=${configured}`;
 }
 
-export async function askGemini(prompt: string): Promise<string> {
-  return askGeminiWithImages({
-    prompt,
-    inlineImages: [],
-  });
-}
-
 export async function generateGeminiImage(prompt: string): Promise<GeminiGeneratedImage> {
   return generateGeminiImageWithInputs({ prompt, inlineImages: [] });
 }
