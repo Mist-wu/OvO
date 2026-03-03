@@ -33,6 +33,56 @@ function getPrivateWaitMs(text: string, hasVisual: boolean): number {
   return isLikelyUnfinishedText(text) ? 800 : 220;
 }
 
+function hasMeaningfulTextSegments(segments: MessageSegment[] | undefined): boolean {
+  if (!Array.isArray(segments)) return false;
+  return segments.some((segment) => {
+    if (segment.type !== "text") return false;
+    const content = segment.data?.text;
+    return typeof content === "string" && content.trim().length > 0;
+  });
+}
+
+function hasImageOnlyCqContent(raw: string): boolean {
+  const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,[^\]]+)?\]/g;
+  let hasImage = false;
+  let hasPlainText = false;
+  let cursor = 0;
+
+  for (const match of raw.matchAll(regex)) {
+    const full = match[0] ?? "";
+    const type = (match[1] ?? "").toLowerCase();
+    const index = match.index ?? 0;
+
+    if (index > cursor && raw.slice(cursor, index).trim()) {
+      hasPlainText = true;
+    }
+    if (type === "image") {
+      hasImage = true;
+    }
+    cursor = index + full.length;
+  }
+
+  if (cursor < raw.length && raw.slice(cursor).trim()) {
+    hasPlainText = true;
+  }
+
+  return hasImage && !hasPlainText;
+}
+
+function isPrivateImageOnlyMessage(event: ChatEvent): boolean {
+  if (Array.isArray(event.segments)) {
+    const hasImage = event.segments.some((segment) => segment.type === "image");
+    if (!hasImage) return false;
+    return !hasMeaningfulTextSegments(event.segments);
+  }
+
+  if (typeof event.rawMessage === "string" && event.rawMessage.trim()) {
+    return hasImageOnlyCqContent(event.rawMessage.trim());
+  }
+
+  return false;
+}
+
 export function decideTrigger(
   event: ChatEvent,
 ): TriggerDecision {
@@ -41,6 +91,16 @@ export function decideTrigger(
   const hasContent = text.length > 0 || hasVisual;
 
   if (event.scope === "private") {
+    if (isPrivateImageOnlyMessage(event)) {
+      return {
+        shouldReply: false,
+        reason: "not_triggered",
+        priority: "low",
+        waitMs: 0,
+        willingness: 0,
+      };
+    }
+
     if (!hasContent) {
       return {
         shouldReply: false,

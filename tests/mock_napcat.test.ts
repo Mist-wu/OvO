@@ -788,10 +788,7 @@ async function main() {
       );
     });
 
-    await runTest("private image message triggers multimodal chat fallback", async () => {
-      const isExpectedFallbackText = (text: string) =>
-        text === "刚卡了" || text.includes("Gemini 服务暂时不可用");
-
+    await runTest("private image message without text does not trigger chat reply", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "private",
@@ -807,10 +804,42 @@ async function main() {
         ],
       });
 
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) =>
+              item.action === "send_private_msg" &&
+              item.params.user_id === 33335,
+            1000,
+          ),
+        /waitForAction timeout/,
+      );
+    });
+
+    await runTest("private text + image message still triggers chat reply", async () => {
+      const isExpectedFallbackText = (text: string) =>
+        text === "刚卡了" || text.includes("Gemini 服务暂时不可用");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 33344,
+        self_id: 99999,
+        message: [
+          { type: "text", data: { text: "这张图怎么样" } },
+          {
+            type: "image",
+            data: {
+              file: "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+            },
+          },
+        ],
+      });
+
       const action = await server.waitForAction(
         (item) =>
           item.action === "send_private_msg" &&
-          item.params.user_id === 33335 &&
+          item.params.user_id === 33344 &&
           isExpectedFallbackText(messageToText(item.params.message)),
         2500,
       );
