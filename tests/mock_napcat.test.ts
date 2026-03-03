@@ -363,12 +363,9 @@ async function main() {
   process.env.GEMINI_API_KEY = "";
   process.env.WEATHER_API_KEY = "";
   process.env.CHAT_ENABLED = "true";
-  process.env.CHAT_BOT_ALIASES = "小o,ovo";
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
   process.env.CHAT_MEDIA_ENABLED = "true";
   process.env.CHAT_MEDIA_MAX_IMAGES = "2";
-  process.env.CHAT_MEMORY_ENABLED = "true";
-  process.env.CHAT_MEMORY_PATH = path.join(tmpDir, "chat_memory.json");
 
   const { NapcatClient } = await import("../src/napcat/client");
   const client = new NapcatClient();
@@ -622,24 +619,6 @@ async function main() {
       assert.equal(messageToText(action.params.message).includes("积分不足"), true);
     });
 
-    await runTest("non-root user command /问 is denied", async () => {
-      server.sendEvent({
-        post_type: "message",
-        message_type: "private",
-        user_id: 22222,
-        self_id: 99999,
-        message: "/问 你好",
-      });
-
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 22222 &&
-          messageToText(item.params.message) === "无权限",
-      );
-      assert.equal(messageToText(action.params.message), "无权限");
-    });
-
     await runTest("non-root user command /充值 is denied", async () => {
       server.sendEvent({
         post_type: "message",
@@ -656,42 +635,6 @@ async function main() {
           messageToText(item.params.message) === "无权限",
       );
       assert.equal(messageToText(action.params.message), "无权限");
-    });
-
-    await runTest("root command /问 without prompt returns usage", async () => {
-      server.sendEvent({
-        post_type: "message",
-        message_type: "private",
-        user_id: 11111,
-        self_id: 99999,
-        message: "/问",
-      });
-
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message) === "用法：/问 <问题>",
-      );
-      assert.equal(messageToText(action.params.message), "用法：/问 <问题>");
-    });
-
-    await runTest("root command /问 returns config hint when key missing", async () => {
-      server.sendEvent({
-        post_type: "message",
-        message_type: "private",
-        user_id: 11111,
-        self_id: 99999,
-        message: "/问 你好",
-      });
-
-      const action = await server.waitForAction(
-        (item) =>
-          item.action === "send_private_msg" &&
-          item.params.user_id === 11111 &&
-          messageToText(item.params.message).includes("GEMINI_API_KEY"),
-      );
-      assert.equal(true, messageToText(action.params.message).includes("GEMINI_API_KEY"));
     });
 
     await runTest("weather formatter follows python template", async () => {
@@ -757,7 +700,7 @@ async function main() {
       );
     });
 
-    await runTest("group reply message is only read without @", async () => {
+    await runTest("group reply message without @ does not fetch quoted msg", async () => {
       server.sendEvent({
         post_type: "message",
         message_type: "group",
@@ -772,10 +715,14 @@ async function main() {
         raw_message: "[CQ:reply,id=778899]小o 你怎么看",
       });
 
-      const getMsgAction = await server.waitForAction(
-        (item) => item.action === "get_msg" && item.params.message_id === "778899",
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) => item.action === "get_msg" && item.params.message_id === "778899",
+            220,
+          ),
+        /waitForAction timeout/,
       );
-      assert.equal(getMsgAction.action, "get_msg");
 
       await assert.rejects(
         () =>
@@ -904,6 +851,29 @@ async function main() {
           item.params.user_id === userId,
       );
       assert.equal(replied.length, 2);
+    });
+
+    await runTest("/问 text is handled as normal private chat message", async () => {
+      const userId = 33343;
+      const isExpectedFallbackText = (text: string) =>
+        text === "刚卡了" || text.includes("Gemini 服务暂时不可用");
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: userId,
+        self_id: 99999,
+        message: "/问 你好",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === userId &&
+          isExpectedFallbackText(messageToText(item.params.message)),
+        2500,
+      );
+      assert.equal(isExpectedFallbackText(messageToText(action.params.message)), true);
     });
 
     await runTest("private weather question still returns a direct reply", async () => {

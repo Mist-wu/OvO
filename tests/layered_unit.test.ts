@@ -27,7 +27,6 @@ import {
   type OneBotEvent,
 } from "../src/napcat/commands/types";
 import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
-import { ChatMemoryStore } from "../src/storage/chat_memory_store";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
@@ -60,11 +59,11 @@ async function main() {
     assert.equal(isMetaEvent(metaEvent), true);
   });
 
-  await runTest("command registry keeps /问 as root and /帮助 as user", async () => {
-    const askCommand = parseCommand("/问 你好");
-    assert.ok(askCommand);
-    assert.equal(askCommand?.definition.name, "ask");
-    assert.equal(askCommand?.definition.access ?? "root", "root");
+  await runTest("command registry keeps /help as root and /帮助 as user", async () => {
+    const helpRootCommand = parseCommand("/help");
+    assert.ok(helpRootCommand);
+    assert.equal(helpRootCommand?.definition.name, "help");
+    assert.equal(helpRootCommand?.definition.access ?? "root", "root");
 
     const helpCommand = parseCommand("/帮助");
     assert.ok(helpCommand);
@@ -417,69 +416,6 @@ async function main() {
 
     await Promise.all([runTask(), runTask(), runTask()]);
     assert.equal(maxActive, 1);
-  });
-
-  await runTest("chat memory store persists user facts and summaries", async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-chat-memory-"));
-    const filePath = path.join(tmpDir, "chat_memory.json");
-
-    const store = new ChatMemoryStore(filePath, {
-      maxFactsPerUser: 10,
-      maxSummariesPerSession: 10,
-    });
-    store.touchUser(10001, "测试用户");
-    store.rememberFact(10001, "preference", "喜欢:咖啡");
-    store.appendSessionSummary("p:10001", "用户提到喜欢咖啡", 4);
-
-    const reloaded = new ChatMemoryStore(filePath, {
-      maxFactsPerUser: 10,
-      maxSummariesPerSession: 10,
-    });
-    const facts = reloaded.getUserFacts(10001, 5);
-    const summaries = reloaded.getSessionSummaries("p:10001", 5);
-
-    assert.equal(facts.length, 1);
-    assert.equal(facts[0].content, "喜欢:咖啡");
-    assert.equal(summaries.length, 1);
-    assert.equal(summaries[0].summary, "用户提到喜欢咖啡");
-  });
-
-  await runTest("chat memory store manual replace updates facts and summaries", async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-chat-memory-compact-"));
-    const filePath = path.join(tmpDir, "chat_memory.json");
-
-    const store = new ChatMemoryStore(filePath, {
-      maxFactsPerUser: 10,
-      maxSummariesPerSession: 10,
-    });
-
-    store.touchUser(20001, "阿星");
-    store.rememberFact(20001, "preference", "喜欢:咖啡");
-    store.rememberFact(20001, "preference", "喜欢:喝咖啡");
-    store.rememberFact(20001, "preference", "喜欢:  咖啡  ");
-
-    const factReplace = store.replaceUserFacts(20001, [
-      { category: "preference", content: "喜欢:咖啡" },
-      { category: "preference", content: "喜欢:咖啡" },
-      { category: "identity", content: "称呼:阿星" },
-    ]);
-    assert.equal(factReplace.before >= 1, true);
-    assert.equal(factReplace.after, 2);
-    const facts = store.getUserFacts(20001, 10);
-    assert.equal(facts.length, 2);
-
-    store.appendSessionSummary("g:200", "用户提到：喜欢咖啡；小o回应：建议早点休息", 3);
-    store.appendSessionSummary("g:200", "用户提到 喜欢咖啡。小o回应 建议早点休息。", 2);
-
-    const summaryReplace = store.replaceSessionSummaries("g:200", [
-      { summary: "用户提到喜欢咖啡", archivedMessageCount: 3 },
-      { summary: "用户提到喜欢咖啡", archivedMessageCount: 5 },
-      { summary: "小o建议早点休息", archivedMessageCount: 2 },
-    ]);
-    assert.equal(summaryReplace.before >= 2, true);
-    assert.equal(summaryReplace.after, 2);
-    const summaries = store.getSessionSummaries("g:200", 10);
-    assert.equal(summaries.length, 2);
   });
 
   await runTest("logger.emitRaw bypasses global LOG_LEVEL gate", async () => {
