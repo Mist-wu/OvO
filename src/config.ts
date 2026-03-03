@@ -121,7 +121,7 @@ export const config = {
   llm: {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY?.trim() || "",
-      model: process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL?.trim() || "gemini-3-flash-preview",
       imageModel: process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3-pro-image-preview",
       baseUrl: process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com",
       timeoutMs: numberFromEnv(process.env.GEMINI_TIMEOUT_MS, 30000),
