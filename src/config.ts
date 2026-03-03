@@ -132,13 +132,6 @@ export const config = {
     apiKey: process.env.WEATHER_API_KEY?.trim() || "",
     timeoutMs: numberFromEnv(process.env.WEATHER_TIMEOUT_MS, 8000),
   },
-  search: {
-    timeoutMs: numberFromEnv(process.env.SEARCH_TIMEOUT_MS, 7000),
-    maxResults: numberFromEnv(process.env.SEARCH_MAX_RESULTS, 5),
-  },
-  fx: {
-    timeoutMs: numberFromEnv(process.env.FX_TIMEOUT_MS, 7000),
-  },
   external: {
     circuitBreakerEnabled: booleanFromEnv(process.env.EXTERNAL_CIRCUIT_BREAKER_ENABLED, true),
     circuitFailureThreshold: numberFromEnv(process.env.EXTERNAL_CIRCUIT_FAILURE_THRESHOLD, 3),
@@ -153,18 +146,6 @@ export const config = {
       retries: 1,
       retryDelayMs: 150,
       concurrency: 4,
-      degradeOnFailure: true,
-    }),
-    search: externalServiceConfig("SEARCH", {
-      retries: 1,
-      retryDelayMs: 150,
-      concurrency: 3,
-      degradeOnFailure: true,
-    }),
-    fx: externalServiceConfig("FX", {
-      retries: 1,
-      retryDelayMs: 120,
-      concurrency: 2,
       degradeOnFailure: true,
     }),
   },

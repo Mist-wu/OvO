@@ -6,9 +6,6 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { parseCommand } from "../src/napcat/commands/registry";
 import { ActivityStore } from "../src/activity/store";
-import { detectFxIntent } from "../src/utils/fx";
-import { detectTimeIntent, getTimeSummary } from "../src/utils/time";
-import { calculateExpressionSummary, evaluateExpression } from "../src/utils/calc";
 import {
   buildActionPayload,
   createGetMsgParams,
@@ -134,33 +131,6 @@ async function main() {
       () => store.transferUserPoints({ fromUserId: 9001, toUserId: 9001, points: 1 }),
       /invalid transfer params/,
     );
-  });
-
-  await runTest("calc utils evaluate expression and summary", async () => {
-    assert.equal(evaluateExpression("1 + 2 * 3"), 7);
-    assert.equal(evaluateExpression("(8-2)/3"), 2);
-    assert.equal(calculateExpressionSummary("6/0").includes("计算失败"), true);
-  });
-
-  await runTest("fx intent detector parses zh and code patterns", async () => {
-    const zh = detectFxIntent("100 人民币 换成 美元");
-    assert.deepEqual(zh, { amount: 100, from: "CNY", to: "USD" });
-
-    const code = detectFxIntent("2.5 usd to cny");
-    assert.deepEqual(code, { amount: 2.5, from: "USD", to: "CNY" });
-
-    assert.equal(detectFxIntent("/汇率 USD CNY"), undefined);
-  });
-
-  await runTest("time utils detect timezone intent and format summary", async () => {
-    const shanghai = detectTimeIntent("现在北京时间几点了");
-    assert.equal(shanghai?.timezone, "Asia/Shanghai");
-
-    const utc = detectTimeIntent("UTC+8 时间");
-    assert.equal(utc?.label, "UTC+8");
-
-    const summary = getTimeSummary({ timezone: "Asia/Shanghai", label: "北京时间" });
-    assert.equal(summary.includes("北京时间 当前时间"), true);
   });
 
   await runTest("action helpers produce expected payloads", async () => {
