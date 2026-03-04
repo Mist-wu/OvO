@@ -51,8 +51,10 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
     }
     const visuals = [...directVisuals, ...quotedVisuals];
 
-    const prompt = buildMinimalPrompt(event, visuals.length);
+    const systemPrompt = buildChatSystemPrompt();
+    const prompt = buildChatUserPrompt(event, visuals.length);
     const generated = await generateChatReply({
+      systemPrompt,
       prompt,
       visuals,
       signal: options?.signal,
@@ -89,15 +91,20 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
   }
 }
 
-function buildMinimalPrompt(event: ChatEvent, _mediaCount: number): string {
+function buildChatSystemPrompt(): string {
+  return [
+    "你是一个AI助手。",
+    "请使用纯文本回复，不要使用Markdown格式。",
+  ].join("\n");
+}
+
+function buildChatUserPrompt(event: ChatEvent, _mediaCount: number): string {
   const quoted = event.quotedMessage
     ? `引用内容${event.quotedMessage.senderName ? `（来自${event.quotedMessage.senderName}）` : ""}：${event.quotedMessage.text}`
     : "";
   const userText = event.text.trim() || "(无文本)";
 
   return [
-    "你是一个AI助手。",
-    "请使用纯文本回复，尽量少用Markdown格式。",
     event.senderName ? `发送者：${event.senderName}` : "",
     quoted,
     `用户消息：${userText}`,

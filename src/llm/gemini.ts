@@ -106,10 +106,12 @@ export async function generateGeminiImageWithInputs(input: {
 }
 
 export async function askGeminiWithImages(input: {
+  systemPrompt?: string;
   prompt: string;
   inlineImages: GeminiInlineImage[];
   signal?: AbortSignal;
 }): Promise<string> {
+  const normalizedSystemPrompt = input.systemPrompt?.trim() || "";
   const normalizedPrompt = input.prompt.trim();
   if (!normalizedPrompt) {
     throw new Error("[llm] prompt is required");
@@ -119,10 +121,11 @@ export async function askGeminiWithImages(input: {
     return Boolean(item?.mimeType && item?.dataBase64);
   });
 
-  return runGeminiCall(normalizedPrompt, normalizedImages, input.signal);
+  return runGeminiCall(normalizedSystemPrompt, normalizedPrompt, normalizedImages, input.signal);
 }
 
 async function runGeminiCall(
+  normalizedSystemPrompt: string,
   normalizedPrompt: string,
   inlineImages: GeminiInlineImage[],
   signal?: AbortSignal,
@@ -155,6 +158,13 @@ async function runGeminiCall(
       const response = await client.models.generateContent({
         model: config.llm.gemini.model,
         contents: parts,
+        ...(normalizedSystemPrompt
+          ? {
+              config: {
+                systemInstruction: normalizedSystemPrompt,
+              },
+            }
+          : {}),
       });
 
       const output = response.text?.trim();

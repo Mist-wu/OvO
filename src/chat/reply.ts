@@ -6,6 +6,7 @@ import { sanitizeReply } from "./safety";
 import type { ChatReply, ChatVisualInput } from "./types";
 
 type GenerateChatReplyInput = {
+  systemPrompt?: string;
   prompt: string;
   visuals: ChatVisualInput[];
   signal?: AbortSignal;
@@ -17,6 +18,7 @@ export async function generateChatReply(input: GenerateChatReplyInput): Promise<
     const raw =
       input.visuals.length > 0
         ? await askGeminiWithImages({
+          systemPrompt: input.systemPrompt,
           prompt: input.prompt,
           inlineImages: input.visuals.map((item) => ({
             mimeType: item.mimeType,
@@ -25,6 +27,7 @@ export async function generateChatReply(input: GenerateChatReplyInput): Promise<
           signal: input.signal,
         })
         : await askGeminiWithImages({
+          systemPrompt: input.systemPrompt,
           prompt: input.prompt,
           inlineImages: [],
           signal: input.signal,
