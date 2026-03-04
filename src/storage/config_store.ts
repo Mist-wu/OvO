@@ -4,7 +4,7 @@ import path from "node:path";
 import { logger } from "../utils/logger";
 import { config } from "../config";
 
-export type PersistentConfig = {
+type PersistentConfig = {
   cooldownMs: number;
 };
 

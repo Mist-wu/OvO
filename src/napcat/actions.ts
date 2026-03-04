@@ -87,7 +87,7 @@ export type ActionParams<TAction extends NapcatActionName> = NapcatActionMap[TAc
 
 export type ActionData<TAction extends NapcatActionName> = NapcatActionMap[TAction]["data"];
 
-export type ActionPayload<TAction extends NapcatActionName> = {
+type ActionPayload<TAction extends NapcatActionName> = {
   action: TAction;
   params: ActionParams<TAction>;
   echo: string;

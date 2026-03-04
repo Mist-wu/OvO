@@ -21,7 +21,7 @@ type CircuitBreakerOptions = {
   openMs?: number;
 };
 
-export type ExternalCallOptions<T = unknown> = {
+type ExternalCallOptions<T = unknown> = {
   service: string;
   operation: string;
   timeoutMs: number;

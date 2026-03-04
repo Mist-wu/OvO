@@ -1,7 +1,7 @@
 import { config } from "../config";
 import { clamp01 } from "../utils/helpers";
 
-export type HumanizeReplyOptions = {
+type HumanizeReplyOptions = {
   seed?: string;
 };
 

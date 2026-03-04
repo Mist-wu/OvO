@@ -140,7 +140,7 @@ export type TransferPointsResult = {
   operatedAtMs: number;
 };
 
-export type UserPointsSnapshot = {
+type UserPointsSnapshot = {
   userId: number;
   userName: string;
   totalPoints: number;
@@ -214,32 +214,6 @@ function getOrCreateDailyBucket(data: ActivityStoreData, dateKey: string): Daily
     data.daily[dateKey] = { groups: {} };
   }
   return data.daily[dateKey]!;
-}
-
-function getOrCreateSignInGroupBucket(
-  data: ActivityStoreData,
-  scope: "group" | "private",
-  scopeId: number,
-): GroupSignInBucket {
-  const root = scope === "group" ? data.signIn.groups : data.signIn.privates;
-  const key = String(scopeId);
-  if (!root[key]) {
-    root[key] = {
-      profiles: {},
-      days: {},
-    };
-  }
-  return root[key]!;
-}
-
-function getOrCreateSignInDayBucket(group: GroupSignInBucket, dateKey: string): SignInDayBucket {
-  if (!group.days[dateKey]) {
-    group.days[dateKey] = {
-      users: {},
-      count: 0,
-    };
-  }
-  return group.days[dateKey]!;
 }
 
 function getOrCreateGlobalSignInBucket(data: ActivityStoreData): SignInGlobalBucket {
@@ -1098,14 +1072,6 @@ export class ActivityStore {
     if (keys.length <= MAX_DAILY_BUCKETS) return;
     for (const key of keys.slice(0, keys.length - MAX_DAILY_BUCKETS)) {
       delete this.data.daily[key];
-    }
-  }
-
-  private pruneOldSignInDays(bucket: GroupSignInBucket): void {
-    const keys = Object.keys(bucket.days).sort();
-    if (keys.length <= MAX_DAILY_BUCKETS) return;
-    for (const key of keys.slice(0, keys.length - MAX_DAILY_BUCKETS)) {
-      delete bucket.days[key];
     }
   }
 

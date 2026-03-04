@@ -18,7 +18,7 @@ export function normalizeNonNegativeInt(value: number | undefined, fallback: num
 }
 
 /** 将 value 限制在 [min, max] 区间内，NaN → min。 */
-export function clamp(value: number, min: number, max: number): number {
+function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   if (value < min) return min;
   if (value > max) return max;

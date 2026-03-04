@@ -18,21 +18,6 @@ function hasAtSelf(segments: MessageSegment[] | undefined, selfId: number | unde
   });
 }
 
-function isLikelyUnfinishedText(text: string): boolean {
-  const normalized = text.trim();
-  if (!normalized) return true;
-
-  if (/[，,、….]$/.test(normalized)) return true;
-  if (/(然后|还有|以及|就是|但是|另外)$/.test(normalized)) return true;
-  if (normalized.length <= 12 && !/[。！？!?]$/.test(normalized)) return true;
-  return false;
-}
-
-function getPrivateWaitMs(text: string, hasVisual: boolean): number {
-  if (!text.trim() && hasVisual) return 350;
-  return isLikelyUnfinishedText(text) ? 800 : 220;
-}
-
 function hasMeaningfulTextSegments(segments: MessageSegment[] | undefined): boolean {
   if (!Array.isArray(segments)) return false;
   return segments.some((segment) => {
@@ -96,7 +81,6 @@ export function decideTrigger(
         shouldReply: false,
         reason: "not_triggered",
         priority: "low",
-        waitMs: 0,
         willingness: 0,
       };
     }
@@ -106,7 +90,6 @@ export function decideTrigger(
         shouldReply: false,
         reason: "empty_text",
         priority: "low",
-        waitMs: 0,
         willingness: 0,
       };
     }
@@ -114,7 +97,6 @@ export function decideTrigger(
       shouldReply: true,
       reason: "private_default",
       priority: "high",
-      waitMs: getPrivateWaitMs(text, hasVisual),
       willingness: 0.95,
     };
   }
@@ -124,7 +106,6 @@ export function decideTrigger(
       shouldReply: true,
       reason: "mentioned",
       priority: "must",
-      waitMs: 0,
       willingness: 1,
     };
   }
@@ -134,7 +115,6 @@ export function decideTrigger(
       shouldReply: false,
       reason: "empty_text",
       priority: "low",
-      waitMs: 0,
       willingness: 0,
     };
   }
@@ -143,7 +123,6 @@ export function decideTrigger(
     shouldReply: false,
     reason: "not_triggered",
     priority: "low",
-    waitMs: 0,
     willingness: 0,
   };
 }

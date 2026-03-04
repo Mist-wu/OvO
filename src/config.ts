@@ -20,7 +20,7 @@ function booleanFromEnv(value: string | undefined, fallback = false): boolean {
   return fallback;
 }
 
-export type ExternalServiceConfig = {
+type ExternalServiceConfig = {
   retries: number;
   retryDelayMs: number;
   concurrency: number;

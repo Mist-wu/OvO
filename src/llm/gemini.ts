@@ -13,18 +13,18 @@ export type GeminiGeneratedImage = {
   dataBase64: string;
 };
 
-export type GeminiGroundingSource = {
+type GeminiGroundingSource = {
   title?: string;
   url?: string;
 };
 
-export type GeminiGroundingMetadata = {
+type GeminiGroundingMetadata = {
   webSearchQueries: string[];
   sources: GeminiGroundingSource[];
   usedSearch: boolean;
 };
 
-export type GeminiTextResponse = {
+type GeminiTextResponse = {
   text: string;
   grounding?: GeminiGroundingMetadata;
 };
@@ -48,7 +48,7 @@ function normalizeBaseUrl(input: string): string | undefined {
   return trimmed.replace(/\/+$/, "");
 }
 
-export function createGeminiSdkClient(options?: GeminiSdkClientOptions): GoogleGenAI {
+function createGeminiSdkClient(options?: GeminiSdkClientOptions): GoogleGenAI {
   const apiKey = config.llm.gemini.apiKey.trim();
   if (!apiKey) {
     throw new Error("[llm] Gemini 未配置：请在 .env 中设置 GEMINI_API_KEY");

@@ -4,11 +4,11 @@ import { generateChatReply } from "./reply";
 import { decideTrigger } from "./trigger";
 import type { ChatEvent, ChatReply, TriggerDecision } from "./types";
 
-export type PreparedChatReply = {
+type PreparedChatReply = {
   reply: ChatReply;
 };
 
-export interface ChatOrchestrator {
+interface ChatOrchestrator {
   decide(event: ChatEvent): TriggerDecision;
   prepare(
     event: ChatEvent,
@@ -26,7 +26,6 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
         shouldReply: false,
         reason: "not_triggered",
         priority: "low",
-        waitMs: 0,
         willingness: 0,
       };
     }

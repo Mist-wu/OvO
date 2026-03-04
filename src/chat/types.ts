@@ -43,7 +43,6 @@ export type TriggerDecision = {
   shouldReply: boolean;
   reason: TriggerReason;
   priority: ReplyPriority;
-  waitMs: number;
   willingness: number;
 };
 

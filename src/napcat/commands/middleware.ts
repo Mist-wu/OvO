@@ -50,7 +50,7 @@ function evictCooldownOverflow(): void {
   }
 }
 
-export const permissionMiddleware: CommandMiddleware = async (context, next) => {
+const permissionMiddleware: CommandMiddleware = async (context, next) => {
   const access = context.command.definition.access ?? "root";
   if (access === "user") {
     await next();

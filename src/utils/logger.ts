@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
 
-export type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
+type LogLevel = "debug" | "info" | "warn" | "error" | "silent";
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
     debug: 0,
