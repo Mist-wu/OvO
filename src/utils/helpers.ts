@@ -30,20 +30,6 @@ export function clamp01(value: number): number {
   return clamp(value, 0, 1);
 }
 
-// ─── 文本工具 ───
-
-/** 将连续空白折叠为单个空格并 trim。 */
-export function normalizeText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-/** 截断文本到 maxLength，超出时末尾加 '…'。 */
-export function clipText(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
-}
-
 // ─── 错误工具 ───
 
 /** 将任意 unknown 包装为 Error。 */
