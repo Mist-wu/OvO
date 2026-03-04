@@ -9,6 +9,9 @@ type GenerateChatReplyInput = {
   systemPrompt?: string;
   prompt: string;
   visuals: ChatVisualInput[];
+  grounding?: {
+    enabled?: boolean;
+  };
   signal?: AbortSignal;
   seed?: string;
 };
@@ -24,16 +27,26 @@ export async function generateChatReply(input: GenerateChatReplyInput): Promise<
             mimeType: item.mimeType,
             dataBase64: item.dataBase64,
           })),
+          grounding: input.grounding,
           signal: input.signal,
         })
         : await askGeminiWithImages({
           systemPrompt: input.systemPrompt,
           prompt: input.prompt,
           inlineImages: [],
+          grounding: input.grounding,
           signal: input.signal,
         });
+
+    if (config.chat.groundingMetaLogEnabled && raw.grounding) {
+      logger.info("[chat] grounding metadata", {
+        usedSearch: raw.grounding.usedSearch,
+        webSearchQueries: raw.grounding.webSearchQueries,
+        sources: raw.grounding.sources,
+      });
+    }
     return {
-      text: sanitizeReply(raw, { seed: input.seed }),
+      text: sanitizeReply(raw.text, { seed: input.seed }),
       from: "llm",
     };
   } catch (error) {

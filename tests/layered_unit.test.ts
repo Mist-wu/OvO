@@ -27,6 +27,10 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
+import {
+  buildGeminiGenerateContentConfig,
+  extractGeminiGroundingMetadataFromResponse,
+} from "../src/llm/gemini";
 
 async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
   try {
@@ -386,6 +390,61 @@ async function main() {
 
     await Promise.all([runTask(), runTask(), runTask()]);
     assert.equal(maxActive, 1);
+  });
+
+  await runTest("gemini config merges system instruction and grounding tool", async () => {
+    const full = buildGeminiGenerateContentConfig({
+      systemPrompt: "你是一个助手",
+      enableGrounding: true,
+    });
+    assert.deepEqual(full, {
+      systemInstruction: "你是一个助手",
+      tools: [{ googleSearch: {} }],
+    });
+
+    const groundingOnly = buildGeminiGenerateContentConfig({
+      systemPrompt: "   ",
+      enableGrounding: true,
+    });
+    assert.deepEqual(groundingOnly, {
+      tools: [{ googleSearch: {} }],
+    });
+
+    const empty = buildGeminiGenerateContentConfig({
+      systemPrompt: "",
+      enableGrounding: false,
+    });
+    assert.equal(empty, undefined);
+  });
+
+  await runTest("gemini grounding metadata extraction parses queries and sources", async () => {
+    const metadata = extractGeminiGroundingMetadataFromResponse({
+      candidates: [
+        {
+          groundingMetadata: {
+            webSearchQueries: [" latest Lyon score ", "latest Lyon score", ""],
+            groundingChunks: [
+              { web: { title: "Lyon Result", uri: "https://example.com/a" } },
+              { web: { title: "Lyon Result", uri: "https://example.com/a" } },
+              { web: { title: "Only Title" } },
+            ],
+          },
+        },
+      ],
+    });
+
+    assert.ok(metadata);
+    assert.deepEqual(metadata?.webSearchQueries, ["latest Lyon score"]);
+    assert.deepEqual(metadata?.sources, [
+      { title: "Lyon Result", url: "https://example.com/a" },
+      { title: "Only Title", url: undefined },
+    ]);
+    assert.equal(metadata?.usedSearch, true);
+
+    const none = extractGeminiGroundingMetadataFromResponse({
+      candidates: [{ content: { parts: [{ text: "hello" }] } }],
+    });
+    assert.equal(none, undefined);
   });
 
   await runTest("logger.emitRaw bypasses global LOG_LEVEL gate", async () => {

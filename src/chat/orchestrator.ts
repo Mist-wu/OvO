@@ -57,6 +57,9 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
       systemPrompt,
       prompt,
       visuals,
+      grounding: {
+        enabled: config.chat.groundingEnabled,
+      },
       signal: options?.signal,
       seed: `${event.scope}:${event.groupId ?? 0}:${event.userId}:${event.messageId ?? Date.now()}`,
     });

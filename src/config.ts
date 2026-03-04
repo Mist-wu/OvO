@@ -109,6 +109,8 @@ export const config = {
     enabled: booleanFromEnv(process.env.CHAT_ENABLED, true),
     emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
     maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 1000),
+    groundingEnabled: booleanFromEnv(process.env.CHAT_GROUNDING_ENABLED, true),
+    groundingMetaLogEnabled: booleanFromEnv(process.env.CHAT_GROUNDING_META_LOG_ENABLED, true),
     mediaEnabled: booleanFromEnv(process.env.CHAT_MEDIA_ENABLED, true),
     mediaMaxImages: numberFromEnv(process.env.CHAT_MEDIA_MAX_IMAGES, 2),
     mediaFetchTimeoutMs: numberFromEnv(process.env.CHAT_MEDIA_FETCH_TIMEOUT_MS, 12000),
