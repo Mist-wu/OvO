@@ -96,7 +96,7 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
 
 function buildChatSystemPrompt(): string {
   return [
-    "你是一个AI助手。",
+    "你是一个AI助手，无特殊要求的话使用中文回答。",
     "请使用纯文本回复，不要使用Markdown格式。",
   ].join("\n");
 }
