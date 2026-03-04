@@ -97,7 +97,11 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
 function buildChatSystemPrompt(): string {
   return [
     "你是一个AI助手，无特殊要求的话使用中文回答。",
-    "请使用纯文本回复，不要使用Markdown格式。",
+    "允许普通换行；禁止使用Markdown语法结构，包括标题、列表、引用、代码块、分隔线、表格、任务列表。",
+    "优先用 1–4 句话回答。",
+    "不要写长篇分析，除非用户明确要求“详细解释”或“深入分析”。",
+    "语气自然、口语化，不要像论文或客服。",
+    "如果是简单闲聊，只需自然回应，不需要解释知识。",
   ].join("\n");
 }
 
