@@ -40,23 +40,6 @@ export function createGeminiSdkClient(options?: GeminiSdkClientOptions): GoogleG
   });
 }
 
-export function getGeminiModel(): string {
-  return config.llm.gemini.model;
-}
-
-export function getGeminiImageModel(): string {
-  return config.llm.gemini.imageModel;
-}
-
-export function getGeminiSetupSummary(): string {
-  const configured = config.llm.gemini.apiKey.trim().length > 0;
-  return `llm=gemini model=${config.llm.gemini.model} configured=${configured}`;
-}
-
-export async function generateGeminiImage(prompt: string): Promise<GeminiGeneratedImage> {
-  return generateGeminiImageWithInputs({ prompt, inlineImages: [] });
-}
-
 export async function generateGeminiImageWithInputs(input: {
   prompt: string;
   inlineImages?: GeminiInlineImage[];
@@ -83,39 +66,38 @@ export async function generateGeminiImageWithInputs(input: {
         failureThreshold: config.external.circuitFailureThreshold,
         openMs: config.external.circuitOpenMs,
       },
-      fallback: (error) => {
-        throw error;
-      },
     },
     async () => {
       const client = createGeminiSdkClient({
         timeoutMs: config.llm.gemini.imageTimeoutMs,
       });
-      const interaction = await client.interactions.create({
-        model: getGeminiImageModel(),
-        input:
-          inlineImages.length > 0
-            ? [
-                { type: "text", text: normalizedPrompt },
-                ...inlineImages.map((item) => ({
-                  type: "image" as const,
-                  data: item.dataBase64,
-                  mime_type: item.mimeType,
-                })),
-              ]
-            : normalizedPrompt,
-        response_modalities: ["image"],
+      const response = await client.models.generateContent({
+        model: config.llm.gemini.imageModel,
+        contents: [
+          createPartFromText(normalizedPrompt),
+          ...inlineImages.map((item) => createPartFromBase64(item.dataBase64, item.mimeType)),
+        ],
       });
+      const candidates = Array.isArray(response.candidates) ? response.candidates : [];
+      for (const candidate of candidates) {
+        const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+        for (const part of parts) {
+          const dataBase64 = typeof part?.inlineData?.data === "string" ? part.inlineData.data.trim() : "";
+          if (!dataBase64) continue;
+          const mimeType = typeof part.inlineData?.mimeType === "string" && part.inlineData.mimeType.trim()
+            ? part.inlineData.mimeType.trim()
+            : "image/png";
+          return { mimeType, dataBase64 };
+        }
+      }
 
-      const outputs = Array.isArray(interaction.outputs) ? interaction.outputs : [];
-      for (const output of outputs) {
-        if (output?.type !== "image") continue;
-        const dataBase64 = typeof output.data === "string" ? output.data.trim() : "";
-        if (!dataBase64) continue;
-        const mimeType = typeof output.mime_type === "string" && output.mime_type.trim()
-          ? output.mime_type.trim()
+      const fallbackDataBase64 = typeof response.data === "string" ? response.data.trim() : "";
+      if (fallbackDataBase64) {
+        const firstMimeType = candidates[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+        const mimeType = typeof firstMimeType === "string" && firstMimeType.trim()
+          ? firstMimeType.trim()
           : "image/png";
-        return { mimeType, dataBase64 };
+        return { mimeType, dataBase64: fallbackDataBase64 };
       }
 
       throw new Error("[llm] Gemini 未返回图片");
@@ -171,7 +153,7 @@ async function runGeminiCall(
         ...inlineImages.map((item) => createPartFromBase64(item.dataBase64, item.mimeType)),
       ];
       const response = await client.models.generateContent({
-        model: getGeminiModel(),
+        model: config.llm.gemini.model,
         contents: parts,
       });
 
