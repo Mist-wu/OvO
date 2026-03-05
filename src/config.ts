@@ -127,7 +127,7 @@ export const config = {
       imageModel: process.env.GEMINI_IMAGE_MODEL?.trim() || "gemini-3-pro-image-preview",
       baseUrl: process.env.GEMINI_BASE_URL?.trim() || "https://generativelanguage.googleapis.com",
       timeoutMs: numberFromEnv(process.env.GEMINI_TIMEOUT_MS, 30000),
-      imageTimeoutMs: numberFromEnv(process.env.GEMINI_IMAGE_TIMEOUT_MS, 120000),
+      imageTimeoutMs: numberFromEnv(process.env.GEMINI_IMAGE_TIMEOUT_MS, 200000),
     },
   },
   weather: {
