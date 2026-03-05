@@ -700,6 +700,107 @@ async function main() {
       );
     });
 
+    await runTest("group toggle commands default to current group id when omitted", async () => {
+      const groupId = 54327;
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/关闭指令",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === `已关闭群 ${groupId} 的指令功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 22222,
+        self_id: 99999,
+        message: "/帮助",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === "本群指令功能已关闭",
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/开启指令",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === `已开启群 ${groupId} 的指令功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/关闭聊天",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === `已关闭群 ${groupId} 的聊天功能`,
+      );
+
+      server.actions.length = 0;
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 33351,
+        self_id: 99999,
+        message: [
+          { type: "at", data: { qq: 99999 } },
+          { type: "text", data: { text: "小o 还在吗" } },
+        ],
+        raw_message: "[CQ:at,qq=99999]小o 还在吗",
+      });
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) => item.action === "send_group_msg" && item.params.group_id === groupId,
+            1200,
+          ),
+        /waitForAction timeout/,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
+        message: "/开启聊天",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === `已开启群 ${groupId} 的聊天功能`,
+      );
+    });
+
     await runTest("non-root cannot toggle group chat or command switches", async () => {
       server.sendEvent({
         post_type: "message",

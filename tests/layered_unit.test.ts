@@ -102,21 +102,37 @@ async function main() {
     assert.ok(disableChat);
     assert.equal(disableChat?.definition.name, "disable_group_chat");
     assert.deepEqual(disableChat?.payload, { groupId: 123456 });
+    const disableChatWithoutGroupId = parseCommand("/关闭聊天");
+    assert.ok(disableChatWithoutGroupId);
+    assert.equal(disableChatWithoutGroupId?.definition.name, "disable_group_chat");
+    assert.deepEqual(disableChatWithoutGroupId?.payload, {});
 
     const enableChat = parseCommand("/开启聊天 123456");
     assert.ok(enableChat);
     assert.equal(enableChat?.definition.name, "enable_group_chat");
     assert.deepEqual(enableChat?.payload, { groupId: 123456 });
+    const enableChatWithoutGroupId = parseCommand("/开启聊天");
+    assert.ok(enableChatWithoutGroupId);
+    assert.equal(enableChatWithoutGroupId?.definition.name, "enable_group_chat");
+    assert.deepEqual(enableChatWithoutGroupId?.payload, {});
 
     const disableCommand = parseCommand("/关闭指令 123456");
     assert.ok(disableCommand);
     assert.equal(disableCommand?.definition.name, "disable_group_command");
     assert.deepEqual(disableCommand?.payload, { groupId: 123456 });
+    const disableCommandWithoutGroupId = parseCommand("/关闭指令");
+    assert.ok(disableCommandWithoutGroupId);
+    assert.equal(disableCommandWithoutGroupId?.definition.name, "disable_group_command");
+    assert.deepEqual(disableCommandWithoutGroupId?.payload, {});
 
     const enableCommand = parseCommand("/开启指令 123456");
     assert.ok(enableCommand);
     assert.equal(enableCommand?.definition.name, "enable_group_command");
     assert.deepEqual(enableCommand?.payload, { groupId: 123456 });
+    const enableCommandWithoutGroupId = parseCommand("/开启指令");
+    assert.ok(enableCommandWithoutGroupId);
+    assert.equal(enableCommandWithoutGroupId?.definition.name, "enable_group_command");
+    assert.deepEqual(enableCommandWithoutGroupId?.payload, {});
 
     assert.equal(parseCommand("/关闭聊天 0"), null);
     assert.equal(parseCommand("/开启指令 abc"), null);

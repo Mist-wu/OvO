@@ -68,10 +68,11 @@ function parsePointsTargetCommand(
 function parseGroupFeatureToggleCommand(
   message: string,
   command: "关闭聊天" | "开启聊天" | "关闭指令" | "开启指令",
-): { groupId: number } | null {
+): { groupId?: number } | null {
   const parts = splitParts(message);
-  if (parts.length !== 2) return null;
+  if (parts.length !== 1 && parts.length !== 2) return null;
   if (parts[0] !== `/${command}` && parts[0] !== command) return null;
+  if (parts.length === 1) return {};
   const groupId = parseNumber(parts[1]);
   if (groupId === null) return null;
   return { groupId };
@@ -541,56 +542,72 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
     defineCommand({
       name: "disable_group_chat",
-      help: "/关闭聊天 <群号>",
+      help: "/关闭聊天 [群号]",
       cooldownExempt: true,
       allowWhenGroupDisabled: true,
       parse(message) {
         return parseGroupFeatureToggleCommand(message, "关闭聊天");
       },
       async execute(context, payload) {
-        const { groupId } = payload as { groupId: number };
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /关闭聊天，或私聊发送 /关闭聊天 <群号>");
+          return;
+        }
         configStore.setGroupChatEnabled(groupId, false);
         await context.sendText(`已关闭群 ${groupId} 的聊天功能`);
       },
     }),
     defineCommand({
       name: "enable_group_chat",
-      help: "/开启聊天 <群号>",
+      help: "/开启聊天 [群号]",
       cooldownExempt: true,
       allowWhenGroupDisabled: true,
       parse(message) {
         return parseGroupFeatureToggleCommand(message, "开启聊天");
       },
       async execute(context, payload) {
-        const { groupId } = payload as { groupId: number };
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /开启聊天，或私聊发送 /开启聊天 <群号>");
+          return;
+        }
         configStore.setGroupChatEnabled(groupId, true);
         await context.sendText(`已开启群 ${groupId} 的聊天功能`);
       },
     }),
     defineCommand({
       name: "disable_group_command",
-      help: "/关闭指令 <群号>",
+      help: "/关闭指令 [群号]",
       cooldownExempt: true,
       allowWhenGroupDisabled: true,
       parse(message) {
         return parseGroupFeatureToggleCommand(message, "关闭指令");
       },
       async execute(context, payload) {
-        const { groupId } = payload as { groupId: number };
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /关闭指令，或私聊发送 /关闭指令 <群号>");
+          return;
+        }
         configStore.setGroupCommandEnabled(groupId, false);
         await context.sendText(`已关闭群 ${groupId} 的指令功能`);
       },
     }),
     defineCommand({
       name: "enable_group_command",
-      help: "/开启指令 <群号>",
+      help: "/开启指令 [群号]",
       cooldownExempt: true,
       allowWhenGroupDisabled: true,
       parse(message) {
         return parseGroupFeatureToggleCommand(message, "开启指令");
       },
       async execute(context, payload) {
-        const { groupId } = payload as { groupId: number };
+        const groupId = resolveStatsGroupId(context, payload);
+        if (groupId === null) {
+          await context.sendText("用法：群内发送 /开启指令，或私聊发送 /开启指令 <群号>");
+          return;
+        }
         configStore.setGroupCommandEnabled(groupId, true);
         await context.sendText(`已开启群 ${groupId} 的指令功能`);
       },
