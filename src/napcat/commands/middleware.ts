@@ -65,6 +65,25 @@ const permissionMiddleware: CommandMiddleware = async (context, next) => {
   await next();
 };
 
+const groupCommandAvailabilityMiddleware: CommandMiddleware = async (context, next) => {
+  if (context.messageType !== "group" || typeof context.groupId !== "number") {
+    await next();
+    return;
+  }
+
+  if (context.command.definition.allowWhenGroupDisabled) {
+    await next();
+    return;
+  }
+
+  if (!configStore.isGroupCommandEnabled(context.groupId)) {
+    await context.sendText("本群指令功能已关闭");
+    return;
+  }
+
+  await next();
+};
+
 export const cooldownMiddleware: CommandMiddleware = async (context, next) => {
   const cooldownMs = configStore.getCooldownMs();
   if (cooldownMs <= 0) {
@@ -98,6 +117,7 @@ export const cooldownMiddleware: CommandMiddleware = async (context, next) => {
 
 export const defaultCommandMiddlewares: CommandMiddleware[] = [
   permissionMiddleware,
+  groupCommandAvailabilityMiddleware,
   cooldownMiddleware,
 ];
 

@@ -97,6 +97,31 @@ async function main() {
     assert.equal(parseCommand("/转积分 0 123456"), null);
   });
 
+  await runTest("group feature toggle commands parse expected payload", async () => {
+    const disableChat = parseCommand("/关闭聊天 123456");
+    assert.ok(disableChat);
+    assert.equal(disableChat?.definition.name, "disable_group_chat");
+    assert.deepEqual(disableChat?.payload, { groupId: 123456 });
+
+    const enableChat = parseCommand("/开启聊天 123456");
+    assert.ok(enableChat);
+    assert.equal(enableChat?.definition.name, "enable_group_chat");
+    assert.deepEqual(enableChat?.payload, { groupId: 123456 });
+
+    const disableCommand = parseCommand("/关闭指令 123456");
+    assert.ok(disableCommand);
+    assert.equal(disableCommand?.definition.name, "disable_group_command");
+    assert.deepEqual(disableCommand?.payload, { groupId: 123456 });
+
+    const enableCommand = parseCommand("/开启指令 123456");
+    assert.ok(enableCommand);
+    assert.equal(enableCommand?.definition.name, "enable_group_command");
+    assert.deepEqual(enableCommand?.payload, { groupId: 123456 });
+
+    assert.equal(parseCommand("/关闭聊天 0"), null);
+    assert.equal(parseCommand("/开启指令 abc"), null);
+  });
+
   await runTest("activity store transfer points updates balances and validates params", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-points-transfer-"));
     const filePath = path.join(tmpDir, "activity_stats.json");
@@ -185,15 +210,51 @@ async function main() {
     });
 
     assert.equal(store.getCooldownMs(), 777);
+    assert.equal(store.isGroupChatEnabled(12345), false);
+    assert.equal(store.isGroupCommandEnabled(12345), false);
 
     const persisted = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
       version?: number;
-      groupEnabled?: Record<string, boolean>;
+      groupFeatures?: Record<string, { chatEnabled?: boolean; commandEnabled?: boolean }>;
       cooldownMs?: number;
     };
-    assert.equal(persisted.version, 2);
-    assert.equal("groupEnabled" in persisted, false);
+    assert.equal(persisted.version, 3);
+    assert.deepEqual(persisted.groupFeatures?.["12345"], {
+      chatEnabled: false,
+      commandEnabled: false,
+    });
     assert.equal(persisted.cooldownMs, 777);
+  });
+
+  await runTest("config store group feature toggles persist and collapse default entries", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ovo-config-group-features-"));
+    const filePath = path.join(tmpDir, "bot_config.json");
+    const store = new ConfigStore(filePath, {
+      cooldownMs: 300,
+    });
+
+    assert.equal(store.isGroupChatEnabled(54321), true);
+    assert.equal(store.isGroupCommandEnabled(54321), true);
+
+    assert.equal(store.setGroupChatEnabled(54321, false), true);
+    assert.equal(store.setGroupCommandEnabled(54321, false), true);
+    assert.equal(store.isGroupChatEnabled(54321), false);
+    assert.equal(store.isGroupCommandEnabled(54321), false);
+
+    let persisted = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      groupFeatures?: Record<string, { chatEnabled?: boolean; commandEnabled?: boolean }>;
+    };
+    assert.deepEqual(persisted.groupFeatures?.["54321"], {
+      chatEnabled: false,
+      commandEnabled: false,
+    });
+
+    assert.equal(store.setGroupChatEnabled(54321, true), true);
+    assert.equal(store.setGroupCommandEnabled(54321, true), true);
+    persisted = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      groupFeatures?: Record<string, { chatEnabled?: boolean; commandEnabled?: boolean }>;
+    };
+    assert.equal(persisted.groupFeatures?.["54321"], undefined);
   });
 
   await runTest("cooldown middleware blocks repeated command in cooldown window", async () => {

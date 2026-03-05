@@ -2,6 +2,7 @@ import { logger } from "../utils/logger";
 import { config } from "../config";
 import { activityStore } from "../activity/store";
 import { chatOrchestrator } from "../chat";
+import { configStore } from "../storage/config_store";
 import type { ChatEvent, ChatQuotedMessage } from "../chat/types";
 import type { NapcatClient } from "./client";
 import { defaultCommandMiddlewares, runMiddlewares } from "./commands/middleware";
@@ -105,6 +106,11 @@ async function handleMessage(client: NapcatClient, event: MessageEvent): Promise
 async function handleChatMessage(client: NapcatClient, event: MessageEvent, message: string): Promise<void> {
   const userId = event.user_id;
   if (typeof userId !== "number") return;
+  if (event.message_type === "group" && typeof event.group_id === "number") {
+    if (!configStore.isGroupChatEnabled(event.group_id)) {
+      return;
+    }
+  }
 
   const visibleMessage = getChatVisibleText(event) || message;
   const baseChatEvent = toChatEvent(event, visibleMessage);
@@ -651,5 +657,4 @@ function toChatEvent(
     quotedMessage,
   };
 }
-
 

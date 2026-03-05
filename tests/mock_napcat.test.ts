@@ -637,6 +637,163 @@ async function main() {
       assert.equal(messageToText(action.params.message), "无权限");
     });
 
+    await runTest("root can disable and enable group commands for target group", async () => {
+      const groupId = 54324;
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: `/关闭指令 ${groupId}`,
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === `已关闭群 ${groupId} 的指令功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 22222,
+        self_id: 99999,
+        message: "/帮助",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === "本群指令功能已关闭",
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
+        message: `/开启指令 ${groupId}`,
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === `已开启群 ${groupId} 的指令功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 22222,
+        self_id: 99999,
+        message: "/帮助",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message).includes("/帮助"),
+      );
+    });
+
+    await runTest("non-root cannot toggle group chat or command switches", async () => {
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 22222,
+        self_id: 99999,
+        message: "/关闭聊天 54326",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 22222 &&
+          messageToText(item.params.message) === "无权限",
+      );
+    });
+
+    await runTest("root can disable and enable group chat for target group", async () => {
+      const groupId = 54325;
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: `/关闭聊天 ${groupId}`,
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === `已关闭群 ${groupId} 的聊天功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 33350,
+        self_id: 99999,
+        message: [
+          { type: "at", data: { qq: 99999 } },
+          { type: "text", data: { text: "小o 在吗" } },
+        ],
+        raw_message: "[CQ:at,qq=99999]小o 在吗",
+      });
+
+      await assert.rejects(
+        () =>
+          server.waitForAction(
+            (item) =>
+              item.action === "send_group_msg" &&
+              item.params.group_id === groupId,
+            1200,
+          ),
+        /waitForAction timeout/,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "private",
+        user_id: 11111,
+        self_id: 99999,
+        message: `/开启聊天 ${groupId}`,
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === `已开启群 ${groupId} 的聊天功能`,
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 33350,
+        self_id: 99999,
+        message: [
+          { type: "at", data: { qq: 99999 } },
+          { type: "text", data: { text: "小o 现在呢" } },
+        ],
+        raw_message: "[CQ:at,qq=99999]小o 现在呢",
+      });
+
+      const action = await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message).length > 0,
+        2500,
+      );
+      assert.equal(messageToText(action.params.message).length > 0, true);
+    });
+
     await runTest("weather formatter follows python template", async () => {
       const { formatWeatherInfo } = await import("../src/utils/weather");
       const formatted = formatWeatherInfo({
