@@ -18,25 +18,16 @@ type GenerateChatReplyInput = {
 
 export async function generateChatReply(input: GenerateChatReplyInput): Promise<ChatReply> {
   try {
-    const raw =
-      input.visuals.length > 0
-        ? await askGeminiWithImages({
-          systemPrompt: input.systemPrompt,
-          prompt: input.prompt,
-          inlineImages: input.visuals.map((item) => ({
-            mimeType: item.mimeType,
-            dataBase64: item.dataBase64,
-          })),
-          grounding: input.grounding,
-          signal: input.signal,
-        })
-        : await askGeminiWithImages({
-          systemPrompt: input.systemPrompt,
-          prompt: input.prompt,
-          inlineImages: [],
-          grounding: input.grounding,
-          signal: input.signal,
-        });
+    const raw = await askGeminiWithImages({
+      systemPrompt: input.systemPrompt,
+      prompt: input.prompt,
+      inlineImages: input.visuals.map((item) => ({
+        mimeType: item.mimeType,
+        dataBase64: item.dataBase64,
+      })),
+      grounding: input.grounding,
+      signal: input.signal,
+    });
 
     if (config.chat.groundingMetaLogEnabled && raw.grounding) {
       logger.info("[chat] grounding metadata", {

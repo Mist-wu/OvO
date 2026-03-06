@@ -72,7 +72,7 @@ type ActivityStoreData = {
   signIn: SignInScopeBucket;
 };
 
-export type DailyRankItem = {
+type DailyRankItem = {
   userId: number;
   userName: string;
   count: number;

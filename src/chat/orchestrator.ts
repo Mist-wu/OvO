@@ -15,7 +15,7 @@ interface ChatOrchestrator {
     decision?: TriggerDecision,
     options?: { signal?: AbortSignal },
   ): Promise<PreparedChatReply | null>;
-  commit(prepared: PreparedChatReply): void;
+  commit(): void;
   handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
 }
 
@@ -51,7 +51,7 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
     const visuals = [...directVisuals, ...quotedVisuals];
 
     const systemPrompt = buildChatSystemPrompt();
-    const prompt = buildChatUserPrompt(event, visuals.length);
+    const prompt = buildChatUserPrompt(event);
     const generated = await generateChatReply({
       systemPrompt,
       prompt,
@@ -81,14 +81,12 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
     };
   }
 
-  commit(_prepared: PreparedChatReply): void {
-    // 最小模式：不保留会话/长期记忆
-  }
+  commit(): void {}
 
   async handle(event: ChatEvent, decisionInput?: TriggerDecision): Promise<ChatReply | null> {
     const prepared = await this.prepare(event, decisionInput);
     if (!prepared) return null;
-    this.commit(prepared);
+    this.commit();
     return prepared.reply;
   }
 }
@@ -103,7 +101,7 @@ function buildChatSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildChatUserPrompt(event: ChatEvent, _mediaCount: number): string {
+function buildChatUserPrompt(event: ChatEvent): string {
   const quoted = event.quotedMessage
     ? `引用内容${event.quotedMessage.senderName ? `（来自${event.quotedMessage.senderName}）` : ""}：${event.quotedMessage.text}`
     : "";

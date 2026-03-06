@@ -54,7 +54,7 @@ type GetMsgData = {
   emoji_likes_list?: unknown[];
 };
 
-export type NapcatActionMap = {
+type NapcatActionMap = {
   send_private_msg: {
     params: SendPrivateMsgParams;
     data: Record<string, unknown>;

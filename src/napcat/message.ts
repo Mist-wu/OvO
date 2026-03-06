@@ -1,24 +1,24 @@
-export type TextSegment = {
+type TextSegment = {
   type: "text";
   data: { text: string };
 };
 
-export type AtSegment = {
+type AtSegment = {
   type: "at";
   data: { qq: number | "all" };
 };
 
-export type ReplySegment = {
+type ReplySegment = {
   type: "reply";
   data: { id: number | string };
 };
 
-export type ImageSegment = {
+type ImageSegment = {
   type: "image";
   data: { file: string };
 };
 
-export type FaceSegment = {
+type FaceSegment = {
   type: "face";
   data: { id: number };
 };

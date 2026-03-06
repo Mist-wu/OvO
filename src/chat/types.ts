@@ -1,6 +1,6 @@
 import type { MessageSegment } from "../napcat/message";
 
-export type ChatScope = "group" | "private";
+type ChatScope = "group" | "private";
 
 export type ChatQuotedMessage = {
   messageId: number | string;
@@ -31,13 +31,13 @@ export type ChatVisualInput = {
   dataBase64: string;
 };
 
-export type TriggerReason =
+type TriggerReason =
   | "private_default"
   | "mentioned"
   | "empty_text"
   | "not_triggered";
 
-export type ReplyPriority = "must" | "high" | "normal" | "low";
+type ReplyPriority = "must" | "high" | "normal" | "low";
 
 export type TriggerDecision = {
   shouldReply: boolean;

@@ -1,7 +1,7 @@
 import type { NapcatClient } from "../client";
 import type { MessageSegment } from "../message";
 
-export type CommandAccess = "root" | "user";
+type CommandAccess = "root" | "user";
 
 type OneBotEventBase = Record<string, unknown> & {
   post_type?: string;
