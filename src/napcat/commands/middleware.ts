@@ -71,6 +71,11 @@ const groupCommandAvailabilityMiddleware: CommandMiddleware = async (context, ne
     return;
   }
 
+  if (context.isRoot) {
+    await next();
+    return;
+  }
+
   if (context.command.definition.allowWhenGroupDisabled) {
     await next();
     return;

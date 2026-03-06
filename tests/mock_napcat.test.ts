@@ -775,6 +775,21 @@ async function main() {
         group_id: groupId,
         user_id: 11111,
         self_id: 99999,
+        message: "/ping",
+      });
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === groupId &&
+          messageToText(item.params.message) === "pong",
+      );
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: groupId,
+        user_id: 11111,
+        self_id: 99999,
         message: `/开启指令 ${groupId}`,
       });
       await server.waitForAction(
