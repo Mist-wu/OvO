@@ -39,6 +39,8 @@ type GetMsgParams = {
   message_id: number | string;
 };
 
+type GetGroupListParams = Record<string, never>;
+
 type GetMsgData = {
   time?: number;
   message_type?: string;
@@ -52,6 +54,14 @@ type GetMsgData = {
   group_id?: number | string;
   user_id?: number | string;
   emoji_likes_list?: unknown[];
+};
+
+type GetGroupListItem = {
+  group_id?: number | string;
+  group_name?: string;
+  member_count?: number;
+  max_member_count?: number;
+  [key: string]: unknown;
 };
 
 type NapcatActionMap = {
@@ -78,6 +88,10 @@ type NapcatActionMap = {
   get_msg: {
     params: GetMsgParams;
     data: GetMsgData;
+  };
+  get_group_list: {
+    params: GetGroupListParams;
+    data: GetGroupListItem[];
   };
 };
 
@@ -129,6 +143,10 @@ export function createGetMsgParams(messageId: number | string): GetMsgParams {
   return {
     message_id: messageId,
   };
+}
+
+export function createGetGroupListParams(): GetGroupListParams {
+  return {};
 }
 
 export function createSetGroupAddRequestParams(

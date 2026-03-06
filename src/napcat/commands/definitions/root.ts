@@ -23,6 +23,10 @@ import type { CommandDefinition, CommandExecutionContext } from "../types";
 type EmptyPayload = Record<string, never>;
 type HelpScope = "root" | "user";
 type HelpTextProvider = (scope: HelpScope) => string;
+type GroupListItem = {
+  group_id?: number | string;
+  group_name?: string;
+};
 
 const emptyPayload: EmptyPayload = {};
 
@@ -130,6 +134,46 @@ function resolveStatsGroupId(
     return context.groupId;
   }
   return null;
+}
+
+function formatGroupFeatureEnabled(enabled: boolean): string {
+  return enabled ? "开启" : "关闭";
+}
+
+function formatGroupStatusLine(groupId: number, options?: { groupName?: string }): string {
+  const parts = [`群${groupId}`];
+  const groupName = options?.groupName?.trim();
+  if (groupName) {
+    parts.push(`(${groupName})`);
+  }
+
+  return [
+    parts.join(" "),
+    `聊天=${formatGroupFeatureEnabled(configStore.isGroupChatEnabled(groupId))}`,
+    `指令=${formatGroupFeatureEnabled(configStore.isGroupCommandEnabled(groupId))}`,
+    `冷却=${configStore.getCooldownMs()}ms`,
+  ].join(" | ");
+}
+
+function normalizeGroupList(data: unknown): Array<{ groupId: number; groupName?: string }> {
+  if (!Array.isArray(data)) return [];
+
+  const groups: Array<{ groupId: number; groupName?: string }> = [];
+  for (const item of data) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as GroupListItem;
+    const groupIdRaw = record.group_id;
+    const parsedGroupId =
+      typeof groupIdRaw === "number" || typeof groupIdRaw === "string" ? Number(groupIdRaw) : NaN;
+    if (!Number.isSafeInteger(parsedGroupId) || parsedGroupId <= 0) continue;
+    groups.push({
+      groupId: parsedGroupId,
+      groupName: typeof record.group_name === "string" ? record.group_name.trim() : undefined,
+    });
+  }
+
+  groups.sort((left, right) => left.groupId - right.groupId);
+  return groups;
 }
 
 async function sendContextImage(
@@ -445,6 +489,38 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
           `retry_count=${runtime.retryCount}`,
           `rate_limit_wait_ms_total=${runtime.rateLimitWaitMsTotal}`,
         ].join("\n"));
+      },
+    }),
+    defineCommand({
+      name: "group_status",
+      help: "/群状态",
+      cooldownExempt: true,
+      allowWhenGroupDisabled: true,
+      parse(message) {
+        return message.trim() === "/群状态" ? emptyPayload : null;
+      },
+      async execute(context) {
+        if (context.messageType === "group" && typeof context.groupId === "number") {
+          await context.sendText(formatGroupStatusLine(context.groupId));
+          return;
+        }
+
+        try {
+          const response = await context.client.getGroupList();
+          const groups = normalizeGroupList(response.data);
+          if (groups.length <= 0) {
+            await context.sendText("当前未加入任何群");
+            return;
+          }
+
+          await context.sendText([
+            "当前群状态：",
+            ...groups.map((item) => formatGroupStatusLine(item.groupId, { groupName: item.groupName })),
+          ].join("\n"));
+        } catch (error) {
+          logger.warn("[group_status] 获取群列表失败:", error);
+          await context.sendText("获取群状态失败，请稍后重试");
+        }
       },
     }),
     defineCommand({

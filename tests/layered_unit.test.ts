@@ -70,6 +70,11 @@ async function main() {
     assert.ok(helpCommand);
     assert.equal(helpCommand?.definition.name, "user_help");
     assert.equal(helpCommand?.definition.access, "user");
+
+    const groupStatusCommand = parseCommand("/群状态");
+    assert.ok(groupStatusCommand);
+    assert.equal(groupStatusCommand?.definition.name, "group_status");
+    assert.equal(groupStatusCommand?.definition.access ?? "root", "root");
   });
 
   await runTest("points commands parse supports numeric and @target forms", async () => {

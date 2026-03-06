@@ -161,6 +161,31 @@ async function createMockServer() {
         return;
       }
 
+      if (payload.action === "get_group_list") {
+        ws.send(
+          JSON.stringify({
+            status: "ok",
+            retcode: 0,
+            data: [
+              {
+                group_id: 70011,
+                group_name: "Alpha",
+              },
+              {
+                group_id: 70012,
+                group_name: "Beta",
+              },
+              {
+                group_id: 70013,
+                group_name: "Gamma",
+              },
+            ],
+            echo: payload.echo,
+          }),
+        );
+        return;
+      }
+
       if (payload.action === "delayed_ok") {
         setTimeout(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -368,6 +393,7 @@ async function main() {
   process.env.CHAT_MEDIA_MAX_IMAGES = "2";
 
   const { NapcatClient } = await import("../src/napcat/client");
+  const { configStore } = await import("../src/storage/config_store");
   const client = new NapcatClient();
   client.connect();
   await server.waitForConnection();
@@ -484,6 +510,80 @@ async function main() {
       assert.equal(true, statusText.includes("queue_overflow_count="));
       assert.equal(true, statusText.includes("retry_count="));
       assert.equal(true, statusText.includes("rate_limit_wait_ms_total="));
+    });
+
+    await runTest("/群状态 in group shows current group switches and cooldown", async () => {
+      const groupId = 70021;
+      const previousCooldownMs = configStore.getCooldownMs();
+
+      try {
+        configStore.setGroupChatEnabled(groupId, false);
+        configStore.setGroupCommandEnabled(groupId, false);
+        configStore.setCooldownMs(1500);
+
+        server.sendEvent({
+          post_type: "message",
+          message_type: "group",
+          group_id: groupId,
+          user_id: 11111,
+          self_id: 99999,
+          message: "/群状态",
+        });
+
+        const action = await server.waitForAction(
+          (item) =>
+            item.action === "send_group_msg" &&
+            item.params.group_id === groupId &&
+            messageToText(item.params.message).includes(`群${groupId}`),
+        );
+        const text = messageToText(action.params.message);
+        assert.equal(text.includes(`群${groupId}`), true);
+        assert.equal(text.includes("聊天=关闭"), true);
+        assert.equal(text.includes("指令=关闭"), true);
+        assert.equal(text.includes("冷却=1500ms"), true);
+      } finally {
+        configStore.setGroupChatEnabled(groupId, true);
+        configStore.setGroupCommandEnabled(groupId, true);
+        configStore.setCooldownMs(previousCooldownMs);
+      }
+    });
+
+    await runTest("/群状态 in private lists all joined groups", async () => {
+      const previousCooldownMs = configStore.getCooldownMs();
+
+      try {
+        configStore.setGroupChatEnabled(70011, false);
+        configStore.setGroupCommandEnabled(70012, false);
+        configStore.setCooldownMs(2500);
+
+        server.sendEvent({
+          post_type: "message",
+          message_type: "private",
+          user_id: 11111,
+          self_id: 99999,
+          message: "/群状态",
+        });
+
+        const getGroupList = await server.waitForAction(
+          (item) => item.action === "get_group_list",
+        );
+        assert.equal(getGroupList.action, "get_group_list");
+
+        const action = await server.waitForAction(
+          (item) =>
+            item.action === "send_private_msg" &&
+            item.params.user_id === 11111 &&
+            messageToText(item.params.message).includes("当前群状态："),
+        );
+        const text = messageToText(action.params.message);
+        assert.equal(text.includes("群70011 (Alpha) | 聊天=关闭 | 指令=开启 | 冷却=2500ms"), true);
+        assert.equal(text.includes("群70012 (Beta) | 聊天=开启 | 指令=关闭 | 冷却=2500ms"), true);
+        assert.equal(text.includes("群70013 (Gamma) | 聊天=开启 | 指令=开启 | 冷却=2500ms"), true);
+      } finally {
+        configStore.setGroupChatEnabled(70011, true);
+        configStore.setGroupCommandEnabled(70012, true);
+        configStore.setCooldownMs(previousCooldownMs);
+      }
     });
 
     await runTest("user command /帮助 is available to non-root users", async () => {
