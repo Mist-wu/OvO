@@ -1480,6 +1480,30 @@ async function main() {
       );
     });
 
+    await runTest("connect is idempotent while websocket is connecting", async () => {
+      const baseClientCount = server.wss.clients.size;
+      const duplicateClient = new NapcatClient();
+      server.actions.length = 0;
+
+      duplicateClient.connect();
+      duplicateClient.connect();
+      await waitForClientOpen(duplicateClient);
+      await delay(120);
+
+      assert.equal(server.wss.clients.size, baseClientCount + 1);
+      const startupMessages = server.actions.filter(
+        (item) =>
+          item.action === "send_private_msg" &&
+          item.params.user_id === 11111 &&
+          messageToText(item.params.message) === "Bot成功启动",
+      );
+      assert.equal(startupMessages.length, 1);
+
+      await duplicateClient.shutdown();
+      await delay(50);
+      assert.equal(server.wss.clients.size, baseClientCount);
+    });
+
     await runTest("action queue rate limit throttles bursts", async () => {
       await withActionQueueOverrides(
         {

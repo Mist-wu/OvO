@@ -126,7 +126,12 @@ export class NapcatClient {
 
   connect(): void {
     if (this.shuttingDown) return;
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
 
     const headers: Record<string, string> = {};
     if (config.napcat.token) {
