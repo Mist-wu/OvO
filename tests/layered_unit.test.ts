@@ -27,6 +27,7 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
+import { formatSpeakerLabel } from "../src/chat/orchestrator";
 import { ChatSessionStore } from "../src/chat/session";
 import {
   buildGeminiGenerateContentConfig,
@@ -365,6 +366,21 @@ async function main() {
     assert.equal(sameGroupTurns.length, 2);
     assert.deepEqual(sameGroupTurns.map((item) => item.senderName), ["A", "B"]);
     assert.deepEqual(otherGroupTurns, []);
+  });
+
+  await runTest("group chat speaker labels use nickname only", async () => {
+    assert.equal(
+      formatSpeakerLabel({ scope: "group", userId: 2001, senderName: "Alpha" }),
+      "Alpha",
+    );
+    assert.equal(
+      formatSpeakerLabel({ scope: "group", userId: 2002, senderName: "Alpha" }),
+      "Alpha",
+    );
+    assert.equal(
+      formatSpeakerLabel({ scope: "private", userId: 3001, senderName: "Tester" }),
+      "Tester(3001)",
+    );
   });
 
   await runTest("cooldown middleware blocks repeated command in cooldown window", async () => {

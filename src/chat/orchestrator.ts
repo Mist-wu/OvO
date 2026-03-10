@@ -104,12 +104,34 @@ function buildChatSystemPrompt(): string {
   ].join("\n");
 }
 
-function buildRecentTurnsPrompt(turns: ChatConversationTurn[]): string {
+export function formatSpeakerLabel(options: {
+  scope: "group" | "private";
+  userId?: number | string;
+  senderName?: string;
+}): string {
+  const rawName = options.senderName?.trim() || "";
+  const hasUserId =
+    typeof options.userId === "number" || typeof options.userId === "string";
+  const userIdText = hasUserId ? String(options.userId).trim() : "";
+  const displayName = rawName || (userIdText ? `用户${userIdText}` : "用户");
+
+  if (options.scope === "group") return displayName;
+  return userIdText && rawName ? `${rawName}(${userIdText})` : displayName;
+}
+
+function buildRecentTurnsPrompt(
+  turns: ChatConversationTurn[],
+  scope: "group" | "private",
+): string {
   if (turns.length <= 0) return "";
 
   const lines = ["最近对话（仅保留 2 分钟内、最多 30 轮）："];
   for (const [index, turn] of turns.entries()) {
-    const speaker = turn.senderName?.trim() || `用户${turn.userId}`;
+    const speaker = formatSpeakerLabel({
+      scope,
+      userId: turn.userId,
+      senderName: turn.senderName,
+    });
     lines.push(`${index + 1}. ${speaker}：${turn.userText}`);
     lines.push(`助手：${turn.assistantText}`);
   }
@@ -117,14 +139,26 @@ function buildRecentTurnsPrompt(turns: ChatConversationTurn[]): string {
 }
 
 function buildChatUserPrompt(event: ChatEvent, recentTurns: ChatConversationTurn[]): string {
+  const senderLabel = formatSpeakerLabel({
+    scope: event.scope,
+    userId: event.userId,
+    senderName: event.senderName,
+  });
+  const quotedSenderLabel = event.quotedMessage
+    ? formatSpeakerLabel({
+      scope: event.scope,
+      userId: event.quotedMessage.userId,
+      senderName: event.quotedMessage.senderName,
+    })
+    : "";
   const quoted = event.quotedMessage
-    ? `引用内容${event.quotedMessage.senderName ? `（来自${event.quotedMessage.senderName}）` : ""}：${event.quotedMessage.text}`
+    ? `引用内容${quotedSenderLabel ? `（来自${quotedSenderLabel}）` : ""}：${event.quotedMessage.text}`
     : "";
   const userText = event.text.trim() || "(无文本)";
 
   return [
-    buildRecentTurnsPrompt(recentTurns),
-    event.senderName ? `发送者：${event.senderName}` : "",
+    buildRecentTurnsPrompt(recentTurns, event.scope),
+    `发送者：${senderLabel}`,
     quoted,
     `用户消息：${userText}`,
   ]
