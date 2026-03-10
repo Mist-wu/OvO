@@ -2,6 +2,7 @@ import { logger } from "../utils/logger";
 import { config } from "../config";
 import { activityStore } from "../activity/store";
 import { chatOrchestrator } from "../chat";
+import { chatSessionStore } from "../chat/session";
 import { configStore } from "../storage/config_store";
 import type { ChatEvent, ChatQuotedMessage } from "../chat/types";
 import type { NapcatClient } from "./client";
@@ -126,6 +127,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
     return;
   }
   await sendChatReply(client, chatEvent, reply.text, reply.quoteMessageId);
+  chatSessionStore.appendTurn(chatEvent, reply.text);
 }
 
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
@@ -657,4 +659,3 @@ function toChatEvent(
     quotedMessage,
   };
 }
-

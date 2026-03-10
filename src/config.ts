@@ -110,6 +110,8 @@ export const config = {
     enabled: booleanFromEnv(process.env.CHAT_ENABLED, true),
     emptyReplyFallback: process.env.CHAT_EMPTY_REPLY_FALLBACK?.trim() || "刚卡了",
     maxReplyChars: numberFromEnv(process.env.CHAT_MAX_REPLY_CHARS, 1000),
+    contextWindowMs: numberFromEnv(process.env.CHAT_CONTEXT_WINDOW_MS, 2 * 60 * 1000),
+    contextMaxTurns: numberFromEnv(process.env.CHAT_CONTEXT_MAX_TURNS, 30),
     groundingEnabled: booleanFromEnv(process.env.CHAT_GROUNDING_ENABLED, true),
     groundingMetaLogEnabled: booleanFromEnv(process.env.CHAT_GROUNDING_META_LOG_ENABLED, true),
     mediaEnabled: booleanFromEnv(process.env.CHAT_MEDIA_ENABLED, true),

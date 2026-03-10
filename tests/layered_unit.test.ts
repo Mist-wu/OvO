@@ -27,6 +27,7 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
+import { ChatSessionStore } from "../src/chat/session";
 import {
   buildGeminiGenerateContentConfig,
   extractGeminiGroundingMetadataFromResponse,
@@ -276,6 +277,94 @@ async function main() {
       groupFeatures?: Record<string, { chatEnabled?: boolean; commandEnabled?: boolean }>;
     };
     assert.equal(persisted.groupFeatures?.["54321"], undefined);
+  });
+
+  await runTest("chat session store expires old context and caps rounds", async () => {
+    const store = new ChatSessionStore({
+      expireWindowMs: 120_000,
+      maxTurns: 3,
+    });
+
+    store.appendTurn({
+      scope: "private",
+      userId: 1001,
+      text: "第一句",
+      eventTimeMs: 1_000,
+    }, "第一答");
+    store.appendTurn({
+      scope: "private",
+      userId: 1001,
+      text: "第二句",
+      eventTimeMs: 61_000,
+    }, "第二答");
+    store.appendTurn({
+      scope: "private",
+      userId: 1001,
+      text: "第三句",
+      eventTimeMs: 90_000,
+    }, "第三答");
+    store.appendTurn({
+      scope: "private",
+      userId: 1001,
+      text: "第四句",
+      eventTimeMs: 110_000,
+    }, "第四答");
+
+    const cappedTurns = store.getRecentTurns({
+      scope: "private",
+      userId: 1001,
+      eventTimeMs: 110_000,
+    });
+    assert.equal(cappedTurns.length, 3);
+    assert.deepEqual(cappedTurns.map((item) => item.userText), ["第二句", "第三句", "第四句"]);
+
+    const expiredTurns = store.getRecentTurns({
+      scope: "private",
+      userId: 1001,
+      eventTimeMs: 231_001,
+    });
+    assert.deepEqual(expiredTurns, []);
+  });
+
+  await runTest("chat session store uses group scope by group id", async () => {
+    const store = new ChatSessionStore({
+      expireWindowMs: 120_000,
+      maxTurns: 30,
+    });
+
+    store.appendTurn({
+      scope: "group",
+      groupId: 9001,
+      userId: 2001,
+      senderName: "A",
+      text: "@bot 你好",
+      eventTimeMs: 10_000,
+    }, "你好");
+    store.appendTurn({
+      scope: "group",
+      groupId: 9001,
+      userId: 2002,
+      senderName: "B",
+      text: "@bot 在吗",
+      eventTimeMs: 20_000,
+    }, "在");
+
+    const sameGroupTurns = store.getRecentTurns({
+      scope: "group",
+      groupId: 9001,
+      userId: 9999,
+      eventTimeMs: 20_000,
+    });
+    const otherGroupTurns = store.getRecentTurns({
+      scope: "group",
+      groupId: 9002,
+      userId: 9999,
+      eventTimeMs: 20_000,
+    });
+
+    assert.equal(sameGroupTurns.length, 2);
+    assert.deepEqual(sameGroupTurns.map((item) => item.senderName), ["A", "B"]);
+    assert.deepEqual(otherGroupTurns, []);
   });
 
   await runTest("cooldown middleware blocks repeated command in cooldown window", async () => {

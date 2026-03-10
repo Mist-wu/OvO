@@ -389,10 +389,13 @@ async function main() {
   process.env.WEATHER_API_KEY = "";
   process.env.CHAT_ENABLED = "true";
   process.env.CHAT_EMPTY_REPLY_FALLBACK = "刚卡了";
+  process.env.CHAT_CONTEXT_WINDOW_MS = "120000";
+  process.env.CHAT_CONTEXT_MAX_TURNS = "30";
   process.env.CHAT_MEDIA_ENABLED = "true";
   process.env.CHAT_MEDIA_MAX_IMAGES = "2";
 
   const { NapcatClient } = await import("../src/napcat/client");
+  const { chatSessionStore } = await import("../src/chat/session");
   const { configStore } = await import("../src/storage/config_store");
   const client = new NapcatClient();
   client.connect();
@@ -1221,6 +1224,7 @@ async function main() {
 
     await runTest("private chat currently replies for each incoming turn", async () => {
       const userId = 33336;
+      chatSessionStore.reset();
       server.sendEvent({
         post_type: "message",
         message_type: "private",
