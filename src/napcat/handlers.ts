@@ -21,6 +21,13 @@ import {
   type RequestEvent,
 } from "./commands/types";
 import { at as atSegment, buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
+import {
+  extractSegmentsFromUnknownMessage,
+  getForwardSegmentId,
+  getReplySegmentId,
+  getSenderNameFromUnknown,
+  parseRawCqMessage,
+} from "./message_utils";
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
   if (isMessageEvent(event)) {
@@ -255,32 +262,6 @@ type GetForwardMsgData = {
   message?: unknown;
 } | unknown[];
 
-function getReplySegmentId(segments: MessageSegment[] | undefined): number | string | undefined {
-  if (!Array.isArray(segments)) return undefined;
-
-  for (const segment of segments) {
-    if (segment.type !== "reply") continue;
-    const id = segment.data?.id;
-    if (typeof id === "number" || typeof id === "string") {
-      return id;
-    }
-  }
-
-  return undefined;
-}
-
-function getForwardSegmentId(segments: MessageSegment[] | undefined): number | string | undefined {
-  if (!Array.isArray(segments)) return undefined;
-  for (const segment of segments) {
-    if (segment.type !== "forward") continue;
-    const id = segment.data?.id;
-    if (typeof id === "number" || typeof id === "string") {
-      return id;
-    }
-  }
-  return undefined;
-}
-
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -290,9 +271,9 @@ function formatAtSummary(
   options?: { selfId?: number | string },
 ): string {
   if (qq === "all") return "@全体成员";
-  if (typeof qq !== "number" && typeof qq !== "string") return "@用户";
+  if (typeof qq !== "number" && typeof qq !== "string") return "@成员";
   const qqText = String(qq).trim();
-  if (!qqText) return "@用户";
+  if (!qqText) return "@成员";
   const selfIdText =
     typeof options?.selfId === "number" || typeof options?.selfId === "string"
       ? String(options.selfId)
@@ -300,82 +281,7 @@ function formatAtSummary(
   if (selfIdText && qqText === selfIdText) {
     return "@我";
   }
-  return `@${qqText}`;
-}
-
-function parseCqParams(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
-  const result: Record<string, string> = {};
-  for (const pair of raw.split(",")) {
-    const [key, ...rest] = pair.split("=");
-    if (!key) continue;
-    result[key.trim()] = rest.join("=").trim();
-  }
-  return result;
-}
-
-function parseRawCqMessage(raw: string, options?: { selfId?: number | string }): { summary: string; segments: MessageSegment[] } {
-  const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]+))?\]/g;
-  const summaryParts: string[] = [];
-  const segments: MessageSegment[] = [];
-  let cursor = 0;
-
-  const pushText = (text: string) => {
-    const normalized = normalizeWhitespace(text);
-    if (normalized) summaryParts.push(normalized);
-  };
-
-  for (const match of raw.matchAll(regex)) {
-    const full = match[0] ?? "";
-    const type = (match[1] ?? "").toLowerCase();
-    const params = parseCqParams(match[2]);
-    const index = match.index ?? 0;
-
-    if (index > cursor) {
-      pushText(raw.slice(cursor, index));
-    }
-
-    switch (type) {
-      case "image": {
-        const imageRef = params.url || params.file || params.path;
-        if (imageRef) {
-          segments.push({
-            type: "image",
-            data: {
-              url: params.url ?? "",
-              file: params.file ?? imageRef,
-              path: params.path ?? "",
-            },
-          });
-        }
-        summaryParts.push("[图片]");
-        break;
-      }
-      case "face":
-      case "mface":
-        summaryParts.push("[表情]");
-        break;
-      case "at":
-        summaryParts.push(formatAtSummary(params.qq, options));
-        break;
-      case "reply":
-        break;
-      default:
-        summaryParts.push(`[${type}]`);
-        break;
-    }
-
-    cursor = index + full.length;
-  }
-
-  if (cursor < raw.length) {
-    pushText(raw.slice(cursor));
-  }
-
-  return {
-    summary: normalizeWhitespace(summaryParts.join(" ")),
-    segments,
-  };
+  return "@成员";
 }
 
 function summarizeQuotedSegments(segments: MessageSegment[]): string {
@@ -454,36 +360,6 @@ function summarizeForwardNode(data: Record<string, unknown> | undefined): string
     return nickname ? `${nickname}: [聊天记录节点]` : "[聊天记录节点]";
   }
   return nickname ? `${nickname}: ${content}` : content;
-}
-
-function extractSegmentsFromUnknownMessage(message: unknown): MessageSegment[] {
-  if (Array.isArray(message)) {
-    return message as MessageSegment[];
-  }
-
-  if (message && typeof message === "object" && "type" in message && "data" in message) {
-    return [message as MessageSegment];
-  }
-
-  if (typeof message === "string") {
-    return parseRawCqMessage(message).segments;
-  }
-
-  return [];
-}
-
-function getSenderNameFromUnknown(sender: unknown): string | undefined {
-  if (!sender || typeof sender !== "object") return undefined;
-
-  const parsed = sender as { card?: unknown; nickname?: unknown };
-  if (typeof parsed.card === "string" && parsed.card.trim()) {
-    return parsed.card.trim();
-  }
-  if (typeof parsed.nickname === "string" && parsed.nickname.trim()) {
-    return parsed.nickname.trim();
-  }
-
-  return undefined;
 }
 
 function extractForwardNodes(data: GetForwardMsgData | undefined): GetForwardMsgNode[] {

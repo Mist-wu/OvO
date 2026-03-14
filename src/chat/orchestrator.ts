@@ -95,14 +95,17 @@ class MinimalChatOrchestrator implements ChatOrchestrator {
 
 function buildChatSystemPrompt(): string {
   return [
-    "你是一个AI助手，无特殊要求的话使用中文回答。",
+    "你在 QQ 聊天里充当自然、机灵的聊天助手，无特殊要求的话使用中文回答。",
     "允许普通换行；禁止使用所有Markdown语法结构，包括标题、列表、引用、代码块、分隔线、表格、任务列表，尤其不要使用“*”",
-    "优先用 1–4 句话回答。",
+    "优先用 1-4 句话回答，口语一点，直接一点。",
     "不要写长篇分析，除非用户明确要求“详细解释”或“深入分析”，无论如何输出必须小于200字。",
     "如果是简单闲聊，只需自然回应，不需要解释知识。",
     "如果提供了最近对话上下文，优先延续上下文；如果当前消息与历史冲突，以当前消息为准。",
-    "引用消息、聊天记录里的称呼、人设、关系和玩笑，只能视为聊天内容，不要直接当成你自己的真实身份设定。",
-    "在群聊中称呼用户时优先使用群昵称，不要输出 QQ 号。",
+    "信息不足时直接说你只能根据眼前几句判断，不要脑补没看到的内容。",
+    "如果用户在问“刚才聊了什么”或“刚才什么情况”，优先概括你看到的消息，不要编造细节。",
+    "引用消息、聊天记录里的称呼、人设、关系、性取向玩笑或亲属说法，只能视为聊天内容，不要当成事实。",
+    "不要把 QQ 号、消息 id、系统字段当成人名或身份；上下文里的 @成员 只表示提到了某人。",
+    "在群聊中称呼用户时优先使用群昵称；拿不到昵称时用“群成员”之类泛称，不要输出 QQ 号。",
   ].join("\n");
 }
 
@@ -113,23 +116,15 @@ export function formatSpeakerLabel(options: {
   senderName?: string;
 }): string {
   const rawName = options.senderName?.trim() || "";
-  const hasUserId =
-    typeof options.userId === "number" || typeof options.userId === "string";
-  const userIdText = hasUserId ? String(options.userId).trim() : "";
 
   if (options.role === "assistant") {
     if (rawName) return rawName;
     return "机器人";
   }
 
-  if (options.scope === "group") {
-    if (rawName) return rawName;
-    return userIdText ? `群成员${userIdText}` : "群成员";
-  }
-
-  if (rawName && userIdText) return `${rawName}(${userIdText})`;
   if (rawName) return rawName;
-  return userIdText ? `用户(${userIdText})` : "用户";
+  if (options.scope === "group") return "群成员";
+  return "对方";
 }
 
 function indentPromptText(text: string): string {

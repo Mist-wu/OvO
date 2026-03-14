@@ -18,17 +18,16 @@ import {
   type MessageInput,
   type MessageSegment,
 } from "../../message";
+import { getSenderNameFromUnknown } from "../../message_utils";
 import type { CommandDefinition, CommandExecutionContext } from "../types";
 
-type EmptyPayload = Record<string, never>;
 type HelpScope = "root" | "user";
 type HelpTextProvider = (scope: HelpScope) => string;
 type GroupListItem = {
   group_id?: number | string;
   group_name?: string;
 };
-
-const emptyPayload: EmptyPayload = {};
+const emptyPayload = {};
 
 function defineCommand<Payload>(
   definition: CommandDefinition<Payload>,
@@ -176,37 +175,9 @@ function normalizeGroupList(data: unknown): Array<{ groupId: number; groupName?:
   return groups;
 }
 
-async function sendContextImage(
+async function sendContextMessage(
   context: CommandExecutionContext,
-  imageFile: string,
-  caption?: string,
-): Promise<void> {
-  const message = caption
-    ? buildMessage(imageSegment(imageFile), textSegment(`\n${caption}`))
-    : buildMessage(imageSegment(imageFile));
-
-  if (context.messageType === "group" && typeof context.groupId === "number") {
-    await context.client.sendMessage({ groupId: context.groupId, message });
-    return;
-  }
-
-  await context.client.sendMessage({ userId: context.userId, message });
-}
-
-async function sendContextTextMessage(
-  context: CommandExecutionContext,
-  text: string,
-): Promise<void> {
-  if (context.messageType === "group" && typeof context.groupId === "number") {
-    await context.client.sendMessage({ groupId: context.groupId, message: buildMessage(textSegment(text)) });
-    return;
-  }
-  await context.client.sendMessage({ userId: context.userId, message: buildMessage(textSegment(text)) });
-}
-
-async function sendContextMixedMessage(
-  context: CommandExecutionContext,
-  parts: MessageInput[],
+  ...parts: MessageInput[]
 ): Promise<void> {
   const message = buildMessage(...parts);
   if (context.messageType === "group" && typeof context.groupId === "number") {
@@ -216,12 +187,29 @@ async function sendContextMixedMessage(
   await context.client.sendMessage({ userId: context.userId, message });
 }
 
+async function sendContextImage(
+  context: CommandExecutionContext,
+  imageFile: string,
+  caption?: string,
+): Promise<void> {
+  if (caption) {
+    await sendContextMessage(context, imageSegment(imageFile), textSegment(`\n${caption}`));
+    return;
+  }
+  await sendContextMessage(context, imageSegment(imageFile));
+}
+
 function resolveCommandNowMs(context: CommandExecutionContext): number {
   const ts = context.event.time;
   if (typeof ts === "number" && Number.isFinite(ts) && ts > 0) {
     return Math.floor(ts * 1000);
   }
   return Date.now();
+}
+
+function getSenderNameFromEvent(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  return getSenderNameFromUnknown((event as { sender?: unknown }).sender);
 }
 
 function parseFaceIdFromTopEmoji(item: TopEmojiItem): number | undefined {
@@ -409,17 +397,12 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         const top3Raw = activityStore.getTodayTopEmojis(groupId, Date.now(), 3);
         const top3 = await resolveEmojiTop3Assets(top3Raw);
         const imageFile = await renderEmojiStatsCard(stats);
-        const message = buildMessage(...buildEmojiStatsMixedMessageParts(imageFile, top3));
         try {
-          if (context.messageType === "group" && typeof context.groupId === "number") {
-            await context.client.sendMessage({ groupId: context.groupId, message });
-          } else {
-            await context.client.sendMessage({ userId: context.userId, message });
-          }
+          await sendContextMessage(context, ...buildEmojiStatsMixedMessageParts(imageFile, top3));
         } catch (error) {
           logger.warn("[activity] 表情统计混合消息发送失败，降级为图+文字:", error);
           await sendContextImage(context, imageFile);
-          await sendContextTextMessage(context, buildEmojiTop3Text(top3));
+          await context.sendText(buildEmojiTop3Text(top3));
         }
       },
     }),
@@ -450,10 +433,10 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
         const top3Raw = activityStore.getTodayTopEmojis(groupId, yesterdayMs, 3);
         const top3 = await resolveEmojiTop3Assets(top3Raw);
         try {
-          await sendContextMixedMessage(context, buildEmojiTop3MixedMessageParts(top3, "昨日最受欢迎表情包TOP3："));
+          await sendContextMessage(context, ...buildEmojiTop3MixedMessageParts(top3, "昨日最受欢迎表情包TOP3："));
         } catch (error) {
           logger.warn("[activity] 昨日统计TOP3发送失败，降级为文字:", error);
-          await sendContextTextMessage(context, buildEmojiTop3Text(top3, "昨日最受欢迎表情包TOP3："));
+          await context.sendText(buildEmojiTop3Text(top3, "昨日最受欢迎表情包TOP3："));
         }
       },
     }),
@@ -717,14 +700,4 @@ export function createRootCommands(getHelpText: HelpTextProvider): CommandDefini
       },
     }),
   ];
-}
-
-function getSenderNameFromEvent(event: unknown): string | undefined {
-  if (!event || typeof event !== "object") return undefined;
-  const sender = (event as { sender?: unknown }).sender;
-  if (!sender || typeof sender !== "object") return undefined;
-  const record = sender as { card?: unknown; nickname?: unknown };
-  if (typeof record.card === "string" && record.card.trim()) return record.card.trim();
-  if (typeof record.nickname === "string" && record.nickname.trim()) return record.nickname.trim();
-  return undefined;
 }

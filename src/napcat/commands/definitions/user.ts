@@ -8,18 +8,22 @@ import { generateGeminiImageWithInputs, type GeminiGeneratedImage, type GeminiIn
 import { ExternalCallError } from "../../../utils/external_call";
 import { fetchWeatherSummary } from "../../../utils/weather";
 import { buildMessage, image as imageSegment, type MessageSegment } from "../../message";
+import {
+  extractSegmentsFromUnknownMessage,
+  getReplySegmentId,
+  getSenderNameFromUnknown,
+  parseRawCqSegments,
+} from "../../message_utils";
 import type { CommandDefinition, CommandExecutionContext } from "../types";
 
-type EmptyPayload = Record<string, never>;
 type HelpScope = "root" | "user";
 type HelpTextProvider = (scope: HelpScope) => string;
-
-const emptyPayload: EmptyPayload = {};
 const IMAGE_COST_POINTS = 6;
 const GENERATED_IMAGE_DIR = path.resolve(process.cwd(), "data/generated_images");
 const DRAW_REFERENCE_IMAGE_LIMIT = 6;
 const DRAW_AVATAR_CACHE_DIR = path.resolve(process.cwd(), "data/qq_avatars");
 const DRAW_DIRECT_BASE64_MAX_BYTES = 3 * 1024 * 1024;
+const emptyPayload = {};
 
 function defineCommand<Payload>(
   definition: CommandDefinition<Payload>,
@@ -37,6 +41,11 @@ async function sendContextImage(
     return;
   }
   await context.client.sendMessage({ userId: context.userId, message });
+}
+
+function getSenderNameFromEvent(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  return getSenderNameFromUnknown((event as { sender?: unknown }).sender);
 }
 
 function ensureDir(dir: string): void {
@@ -90,57 +99,6 @@ async function sendGeneratedImage(context: CommandExecutionContext, generated: G
 
   const imageFile = persistGeneratedImage(generated.dataBase64, generated.mimeType);
   await sendContextImage(context, imageFile);
-}
-
-function parseCqParams(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
-  const result: Record<string, string> = {};
-  for (const pair of raw.split(",")) {
-    const [key, ...rest] = pair.split("=");
-    if (!key) continue;
-    result[key.trim()] = rest.join("=").trim();
-  }
-  return result;
-}
-
-function parseRawCqSegments(raw: string): MessageSegment[] {
-  const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]+))?\]/g;
-  const segments: MessageSegment[] = [];
-  for (const match of raw.matchAll(regex)) {
-    const type = (match[1] ?? "").toLowerCase();
-    const params = parseCqParams(match[2]);
-    if (!type) continue;
-    segments.push({
-      type,
-      data: params as Record<string, unknown>,
-    });
-  }
-  return segments;
-}
-
-function extractSegmentsFromUnknownMessage(message: unknown): MessageSegment[] {
-  if (Array.isArray(message)) {
-    return message as MessageSegment[];
-  }
-  if (message && typeof message === "object" && "type" in message && "data" in message) {
-    return [message as MessageSegment];
-  }
-  if (typeof message === "string" && message.trim()) {
-    return parseRawCqSegments(message);
-  }
-  return [];
-}
-
-function getReplyMessageIdFromSegments(segments: MessageSegment[] | undefined): number | string | undefined {
-  if (!Array.isArray(segments)) return undefined;
-  for (const segment of segments) {
-    if (segment.type !== "reply") continue;
-    const id = segment.data?.id;
-    if (typeof id === "number" || typeof id === "string") {
-      return id;
-    }
-  }
-  return undefined;
 }
 
 function extractSegmentString(segment: MessageSegment, key: string): string {
@@ -282,7 +240,7 @@ type GetMsgData = {
 
 async function resolveReplyImageSources(context: CommandExecutionContext): Promise<DrawReferenceSource[]> {
   const segments = Array.isArray(context.event.message) ? (context.event.message as MessageSegment[]) : undefined;
-  const replyId = getReplyMessageIdFromSegments(segments);
+  const replyId = getReplySegmentId(segments);
   if (replyId === undefined) return [];
 
   try {
@@ -592,14 +550,3 @@ export function createUserCommands(getHelpText: HelpTextProvider): CommandDefini
     }),
   ];
 }
-
-function getSenderNameFromEvent(event: unknown): string | undefined {
-  if (!event || typeof event !== "object") return undefined;
-  const sender = (event as { sender?: unknown }).sender;
-  if (!sender || typeof sender !== "object") return undefined;
-  const record = sender as { card?: unknown; nickname?: unknown };
-  if (typeof record.card === "string" && record.card.trim()) return record.card.trim();
-  if (typeof record.nickname === "string" && record.nickname.trim()) return record.nickname.trim();
-  return undefined;
-}
-

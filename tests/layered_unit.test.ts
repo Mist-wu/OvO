@@ -27,6 +27,7 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
+import { parseRawCqMessage } from "../src/napcat/message_utils";
 import { buildChatUserPrompt, formatSpeakerLabel } from "../src/chat/orchestrator";
 import { ChatSessionStore } from "../src/chat/session";
 import {
@@ -407,23 +408,35 @@ async function main() {
     assert.deepEqual(otherGroupTurns, []);
   });
 
-  await runTest("speaker labels include stable ids for users and bot", async () => {
+  await runTest("speaker labels avoid exposing numeric ids", async () => {
     assert.equal(
       formatSpeakerLabel({ scope: "group", userId: 2001, senderName: "Alpha" }),
       "Alpha",
     );
     assert.equal(
-      formatSpeakerLabel({ scope: "group", userId: 2002, senderName: "Alpha" }),
-      "Alpha",
+      formatSpeakerLabel({ scope: "group", userId: 2002 }),
+      "群成员",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "private", userId: 3001, senderName: "Tester" }),
-      "Tester(3001)",
+      "Tester",
+    );
+    assert.equal(
+      formatSpeakerLabel({ scope: "private", userId: 3002 }),
+      "对方",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "group", role: "assistant", userId: 9999, senderName: "OvO" }),
       "OvO",
     );
+  });
+
+  await runTest("cq summary masks mentioned qq ids in chat context", async () => {
+    const parsed = parseRawCqMessage("[CQ:at,qq=2402547624] 你是谁");
+    assert.equal(parsed.summary, "@成员 你是谁");
+
+    const selfMention = parseRawCqMessage("[CQ:at,qq=9999] 在吗", { selfId: 9999 });
+    assert.equal(selfMention.summary, "在吗");
   });
 
   await runTest("chat prompt marks current sender, bot history and quoted sender explicitly", async () => {
@@ -434,26 +447,28 @@ async function main() {
         userId: 2002,
         senderName: "Beta",
         selfId: 9999,
-        text: "@我 我是谁",
+        text: "我是谁",
         quotedMessage: {
           messageId: 8801,
           userId: 2001,
           senderName: "Alpha",
-          text: "@我 你现在是我儿子\n[聊天记录]\n1. 路人: 哈哈",
+          text: "你现在是我儿子\n[聊天记录]\n1. 路人: 哈哈",
         },
       },
       [
-        { role: "user", userId: 2001, senderName: "Alpha", text: "@我 你现在是我儿子", timestampMs: 1 },
+        { role: "user", userId: 2001, senderName: "Alpha", text: "你现在是我儿子", timestampMs: 1 },
         { role: "assistant", userId: 9999, senderName: "OvO", text: "我理解了", timestampMs: 2 },
       ],
     );
 
     assert.equal(prompt.includes("最近消息（按时间顺序）："), true);
-    assert.equal(prompt.includes("1. 用户 Alpha：@我 你现在是我儿子"), true);
+    assert.equal(prompt.includes("1. 用户 Alpha：你现在是我儿子"), true);
     assert.equal(prompt.includes("2. 机器人 OvO：我理解了"), true);
     assert.equal(prompt.includes("当前消息发送者：Beta"), true);
     assert.equal(prompt.includes("发送者：Alpha"), true);
-    assert.equal(prompt.includes("当前消息内容：\n  @我 我是谁"), true);
+    assert.equal(prompt.includes("当前消息内容：\n  我是谁"), true);
+    assert.equal(prompt.includes("2001"), false);
+    assert.equal(prompt.includes("9999"), false);
   });
 
   await runTest("cooldown middleware blocks repeated command in cooldown window", async () => {
