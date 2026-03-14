@@ -186,6 +186,44 @@ async function createMockServer() {
         return;
       }
 
+      if (payload.action === "get_group_member_info") {
+        const userId = Number(params.user_id);
+        const nicknameMap = new Map<number, string>([
+          [33340, "Destin."],
+          [33342, "Member33342"],
+          [33341, "Member33341"],
+        ]);
+        ws.send(
+          JSON.stringify({
+            status: "ok",
+            retcode: 0,
+            data: {
+              user_id: userId,
+              card: nicknameMap.get(userId) ?? "",
+              nickname: nicknameMap.get(userId) ?? `Member${userId}`,
+            },
+            echo: payload.echo,
+          }),
+        );
+        return;
+      }
+
+      if (payload.action === "get_stranger_info") {
+        const userId = Number(params.user_id);
+        ws.send(
+          JSON.stringify({
+            status: "ok",
+            retcode: 0,
+            data: {
+              user_id: userId,
+              nickname: `User${userId}`,
+            },
+            echo: payload.echo,
+          }),
+        );
+        return;
+      }
+
       if (payload.action === "delayed_ok") {
         setTimeout(() => {
           if (ws.readyState !== WebSocket.OPEN) return;
@@ -353,6 +391,19 @@ async function waitForClientOpen(client: unknown, timeoutMs = 1000) {
     await delay(10);
   }
   throw new Error("client open timeout");
+}
+
+async function waitForCondition(
+  check: () => boolean,
+  timeoutMs = 1000,
+  intervalMs = 20,
+) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (check()) return;
+    await delay(intervalMs);
+  }
+  throw new Error("waitForCondition timeout");
 }
 
 type ActionQueueOverrides = Partial<{
@@ -1152,6 +1203,99 @@ async function main() {
       );
       assert.equal(messageToText(action.params.message).length > 0, true);
       assert.equal(messageHasAt(action.params.message, 33339), false);
+    });
+
+    await runTest("group chat context keeps non-self @mention display name", async () => {
+      chatSessionStore.reset();
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65437,
+        user_id: 33343,
+        self_id: 99999,
+        message_id: 8901,
+        message: [
+          { type: "at", data: { qq: 99999 } },
+          { type: "text", data: { text: "我是" } },
+          { type: "at", data: { qq: 33340 } },
+          { type: "text", data: { text: "父亲" } },
+        ],
+        raw_message: "[CQ:at,qq=99999]我是[CQ:at,qq=33340]父亲",
+      });
+
+      const memberLookup = await server.waitForAction(
+        (item) =>
+          item.action === "get_group_member_info" &&
+          item.params.group_id === 65437 &&
+          item.params.user_id === 33340,
+      );
+      assert.equal(memberLookup.action, "get_group_member_info");
+
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 65437,
+      );
+
+      await waitForCondition(() =>
+        chatSessionStore.getRecentMessages({
+          scope: "group",
+          groupId: 65437,
+          userId: 33343,
+        }).some((item) => item.role === "user"),
+      );
+
+      const recentMessages = chatSessionStore.getRecentMessages({
+        scope: "group",
+        groupId: 65437,
+        userId: 33343,
+      });
+      assert.equal(recentMessages.some((item) => item.role === "user" && item.text.includes("@Destin.")), true);
+      assert.equal(recentMessages.some((item) => item.role === "user" && item.text.includes("@99999")), false);
+      assert.equal(recentMessages.some((item) => item.role === "user" && item.text.includes("33340")), false);
+    });
+
+    await runTest("group chat context normalizes wrapped mention labels", async () => {
+      chatSessionStore.reset();
+
+      server.sendEvent({
+        post_type: "message",
+        message_type: "group",
+        group_id: 65438,
+        user_id: 33344,
+        self_id: 99999,
+        message_id: 8902,
+        message: [
+          { type: "at", data: { qq: 99999 } },
+          { type: "text", data: { text: "我是" } },
+          { type: "at", data: { qq: 33341, text: "@[有人@我驱不散的雾]" } },
+          { type: "text", data: { text: "的谁" } },
+        ],
+        raw_message: "[CQ:at,qq=99999]我是[CQ:at,qq=33341]的谁",
+      });
+
+      await server.waitForAction(
+        (item) =>
+          item.action === "send_group_msg" &&
+          item.params.group_id === 65438,
+      );
+
+      await waitForCondition(() =>
+        chatSessionStore.getRecentMessages({
+          scope: "group",
+          groupId: 65438,
+          userId: 33344,
+        }).some((item) => item.role === "user"),
+      );
+
+      const recentMessages = chatSessionStore.getRecentMessages({
+        scope: "group",
+        groupId: 65438,
+        userId: 33344,
+      });
+      assert.equal(recentMessages.some((item) => item.role === "user" && item.text.includes("@有人@我驱不散的雾")), true);
+      assert.equal(recentMessages.some((item) => item.role === "user" && item.text.includes("@[有人@我驱不散的雾]")), false);
     });
 
     await runTest("group plain text without trigger stays silent", async () => {

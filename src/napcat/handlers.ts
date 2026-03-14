@@ -121,7 +121,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
     }
   }
 
-  const visibleMessage = getChatVisibleText(event) || message;
+  const visibleMessage = (await getChatVisibleText(client, event)) || message;
   const baseChatEvent = toChatEvent(event, visibleMessage);
   const decision = chatOrchestrator.decide(baseChatEvent);
   if (!decision.shouldReply) {
@@ -220,17 +220,183 @@ function extractTextFromSegments(segments: MessageSegment[]): string {
     .trim();
 }
 
-function getChatVisibleText(event: MessageEvent): string {
+function normalizeMentionTarget(qq: unknown, selfId?: number | string): string | undefined {
+  if (qq === "all") return undefined;
+  if (typeof qq !== "number" && typeof qq !== "string") return undefined;
+  const qqText = String(qq).trim();
+  if (!qqText) return undefined;
+  const selfIdText =
+    typeof selfId === "number" || typeof selfId === "string"
+      ? String(selfId).trim()
+      : "";
+  if (selfIdText && qqText === selfIdText) {
+    return undefined;
+  }
+  return qqText;
+}
+
+function unwrapMentionLabel(value: string): string {
+  let current = value.trim();
+  const wrappers: Array<[string, string]> = [
+    ["[", "]"],
+    ["【", "】"],
+    ["(", ")"],
+    ["（", "）"],
+    ["<", ">"],
+    ["《", "》"],
+  ];
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [left, right] of wrappers) {
+      if (!current.startsWith(left) || !current.endsWith(right)) continue;
+      const inner = current.slice(left.length, current.length - right.length).trim();
+      if (!inner) continue;
+      current = inner;
+      changed = true;
+      break;
+    }
+  }
+
+  return current;
+}
+
+function formatMentionText(value: string): string {
+  const normalized = unwrapMentionLabel(value.replace(/^@+/, "").trim());
+  return normalized ? `@${normalized}` : "";
+}
+
+function fallbackMentionText(): string {
+  return "@提及成员";
+}
+
+function pickMentionTextFromSegment(segment: MessageSegment & { type: "at" }): string | undefined {
+  const data = segment.data as Record<string, unknown> | undefined;
+  if (!data) return undefined;
+
+  const candidates = [data.name, data.nickname, data.text, data.display];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const formatted = formatMentionText(candidate);
+    if (formatted) return formatted;
+  }
+
+  return undefined;
+}
+
+function pickDisplayNameFromUnknown(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const record = data as { card?: unknown; nickname?: unknown };
+  if (typeof record.card === "string" && record.card.trim()) return record.card.trim();
+  if (typeof record.nickname === "string" && record.nickname.trim()) return record.nickname.trim();
+  return undefined;
+}
+
+async function resolveMentionDisplayName(
+  client: NapcatClient,
+  options: { groupId?: number; userId: number },
+): Promise<string | undefined> {
+  if (typeof options.groupId === "number") {
+    try {
+      const response = await client.sendAction("get_group_member_info", {
+        group_id: options.groupId,
+        user_id: options.userId,
+        no_cache: false,
+      });
+      const groupName = pickDisplayNameFromUnknown(response.data);
+      if (groupName) return groupName;
+    } catch (error) {
+      logger.debug("[chat] 获取群成员昵称失败:", error);
+    }
+  }
+
+  try {
+    const response = await client.sendAction("get_stranger_info", {
+      user_id: options.userId,
+      no_cache: false,
+    });
+    return pickDisplayNameFromUnknown(response.data);
+  } catch (error) {
+    logger.debug("[chat] 获取提及用户昵称失败:", error);
+    return undefined;
+  }
+}
+
+async function summarizeMessageSegmentsForChat(
+  client: NapcatClient,
+  segments: MessageSegment[],
+  options: {
+    selfId?: number | string;
+    groupId?: number;
+    skipReply?: boolean;
+    includeForwardPlaceholder?: boolean;
+  },
+): Promise<string> {
+  const mentionLabels = new Map<string, string>();
+  const pendingTargets = new Set<string>();
+
+  for (const segment of segments) {
+    if (segment.type !== "at") continue;
+
+    const target = normalizeMentionTarget(segment.data?.qq, options.selfId);
+    if (!target) continue;
+
+    const inlineText = pickMentionTextFromSegment(segment);
+    if (inlineText) {
+      mentionLabels.set(target, inlineText);
+      continue;
+    }
+
+    pendingTargets.add(target);
+  }
+
+  for (const target of pendingTargets) {
+    if (mentionLabels.has(target)) continue;
+    const parsed = Number(target);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      mentionLabels.set(target, fallbackMentionText());
+      continue;
+    }
+
+    const displayName = await resolveMentionDisplayName(client, {
+      groupId: options.groupId,
+      userId: Math.floor(parsed),
+    });
+    mentionLabels.set(target, displayName ? formatMentionText(displayName) : fallbackMentionText());
+  }
+
+  return summarizeMessageSegments(segments, {
+    skipReply: options.skipReply,
+    includeForwardPlaceholder: options.includeForwardPlaceholder,
+    selfId: options.selfId,
+    mentionText: (segment) => {
+      const target = normalizeMentionTarget(segment.data?.qq, options.selfId);
+      if (!target) return "";
+      return mentionLabels.get(target) || fallbackMentionText();
+    },
+  });
+}
+
+async function getChatVisibleText(client: NapcatClient, event: MessageEvent): Promise<string> {
   if (Array.isArray(event.message)) {
-    const summary = summarizeMessageSegments(event.message, {
+    const summary = await summarizeMessageSegmentsForChat(client, event.message, {
       skipReply: true,
       includeForwardPlaceholder: true,
       selfId: event.self_id,
+      groupId: typeof event.group_id === "number" ? event.group_id : undefined,
     });
     if (summary) return summary;
   }
   if (typeof event.raw_message === "string" && event.raw_message.trim()) {
-    return parseRawCqMessage(event.raw_message.trim(), { selfId: event.self_id }).summary || event.raw_message.trim();
+    const parsed = parseRawCqMessage(event.raw_message.trim(), { selfId: event.self_id });
+    const summary = await summarizeMessageSegmentsForChat(client, parsed.segments, {
+      skipReply: true,
+      includeForwardPlaceholder: true,
+      selfId: event.self_id,
+      groupId: typeof event.group_id === "number" ? event.group_id : undefined,
+    });
+    return summary || parsed.summary || event.raw_message.trim();
   }
   if (typeof event.message === "string" && event.message.trim()) {
     return event.message.trim();
@@ -338,9 +504,17 @@ async function resolveQuotedMessage(
       quotedSegments = parsedRawMessage.segments;
     }
 
-    const summaryFromSegments = summarizeMessageSegments(quotedSegments, {
+    const quotedGroupId =
+      typeof data?.group_id === "number"
+        ? data.group_id
+        : typeof event.group_id === "number"
+          ? event.group_id
+          : undefined;
+    const summaryFromSegments = await summarizeMessageSegmentsForChat(client, quotedSegments, {
       skipReply: true,
       includeForwardPlaceholder: true,
+      selfId: event.self_id,
+      groupId: quotedGroupId,
     });
     const forwardSummary = await resolveForwardSummary(client, quotedSegments);
     const text =

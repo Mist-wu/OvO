@@ -453,6 +453,22 @@ async function main() {
     assert.equal(summary, "在吗");
   });
 
+  await runTest("segment summary can keep non-self mention text when requested", async () => {
+    const summary = summarizeMessageSegments(
+      [
+        { type: "at", data: { qq: 9999 } },
+        { type: "text", data: { text: "我是" } },
+        { type: "at", data: { qq: 33340 } },
+        { type: "text", data: { text: "父亲" } },
+      ],
+      {
+        selfId: 9999,
+        mentionText: (segment) => (segment.data.qq === 33340 ? "@Destin." : ""),
+      },
+    );
+    assert.equal(summary, "我是 @Destin. 父亲");
+  });
+
   await runTest("sanitizeReply strips outgoing mentions and emoji placeholders", async () => {
     const sanitized = sanitizeReply("@OvO 我是@Destin. 爷爷 @成员 [表情]");
     assert.equal(sanitized, "我是 爷爷");

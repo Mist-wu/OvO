@@ -4,6 +4,7 @@ type SegmentSummaryOptions = {
   skipReply?: boolean;
   includeForwardPlaceholder?: boolean;
   selfId?: number | string;
+  mentionText?: (segment: MessageSegment & { type: "at" }) => string | undefined;
 };
 
 function normalizeWhitespace(text: string): string {
@@ -11,9 +12,10 @@ function normalizeWhitespace(text: string): string {
 }
 
 function formatAtSummary(
-  qq: unknown,
-  options?: { selfId?: number | string },
+  segment: MessageSegment & { type: "at" },
+  options?: { selfId?: number | string; mentionText?: SegmentSummaryOptions["mentionText"] },
 ): string {
+  const qq = segment.data?.qq;
   if (qq === "all") return "";
   if (typeof qq !== "number" && typeof qq !== "string") return "";
   const qqText = String(qq).trim();
@@ -24,6 +26,10 @@ function formatAtSummary(
       : "";
   if (selfIdText && qqText === selfIdText) {
     return "";
+  }
+  if (typeof options?.mentionText === "function") {
+    const custom = normalizeWhitespace(options.mentionText(segment) ?? "");
+    if (custom) return custom;
   }
   return "";
 }
@@ -145,7 +151,7 @@ export function summarizeMessageSegments(
     }
 
     if (segment.type === "at") {
-      parts.push(formatAtSummary(segment.data?.qq, { selfId: options?.selfId }));
+      parts.push(formatAtSummary(segment, { selfId: options?.selfId, mentionText: options?.mentionText }));
       continue;
     }
 
