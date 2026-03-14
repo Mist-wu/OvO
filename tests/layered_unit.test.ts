@@ -27,7 +27,7 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
-import { formatSpeakerLabel } from "../src/chat/orchestrator";
+import { buildChatUserPrompt, formatSpeakerLabel } from "../src/chat/orchestrator";
 import { ChatSessionStore } from "../src/chat/session";
 import {
   buildGeminiGenerateContentConfig,
@@ -280,46 +280,77 @@ async function main() {
     assert.equal(persisted.groupFeatures?.["54321"], undefined);
   });
 
-  await runTest("chat session store expires old context and caps rounds", async () => {
+  await runTest("chat session store expires old context and caps messages", async () => {
     const store = new ChatSessionStore({
       expireWindowMs: 120_000,
       maxTurns: 3,
     });
 
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "private",
       userId: 1001,
       text: "第一句",
       eventTimeMs: 1_000,
+    });
+    store.appendAssistantMessage({
+      scope: "private",
+      userId: 1001,
+      selfId: 9000,
+      text: "第一句",
+      eventTimeMs: 1_000,
     }, "第一答");
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "private",
       userId: 1001,
       text: "第二句",
       eventTimeMs: 61_000,
+    });
+    store.appendAssistantMessage({
+      scope: "private",
+      userId: 1001,
+      selfId: 9000,
+      text: "第二句",
+      eventTimeMs: 61_000,
     }, "第二答");
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "private",
       userId: 1001,
       text: "第三句",
       eventTimeMs: 90_000,
+    });
+    store.appendAssistantMessage({
+      scope: "private",
+      userId: 1001,
+      selfId: 9000,
+      text: "第三句",
+      eventTimeMs: 90_000,
     }, "第三答");
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "private",
       userId: 1001,
       text: "第四句",
       eventTimeMs: 110_000,
+    });
+    store.appendAssistantMessage({
+      scope: "private",
+      userId: 1001,
+      selfId: 9000,
+      text: "第四句",
+      eventTimeMs: 110_000,
     }, "第四答");
 
-    const cappedTurns = store.getRecentTurns({
+    const cappedMessages = store.getRecentMessages({
       scope: "private",
       userId: 1001,
       eventTimeMs: 110_000,
     });
-    assert.equal(cappedTurns.length, 3);
-    assert.deepEqual(cappedTurns.map((item) => item.userText), ["第二句", "第三句", "第四句"]);
+    assert.equal(cappedMessages.length, 6);
+    assert.deepEqual(
+      cappedMessages.map((item) => `${item.role}:${item.text}`),
+      ["user:第二句", "assistant:第二答", "user:第三句", "assistant:第三答", "user:第四句", "assistant:第四答"],
+    );
 
-    const expiredTurns = store.getRecentTurns({
+    const expiredTurns = store.getRecentMessages({
       scope: "private",
       userId: 1001,
       eventTimeMs: 231_001,
@@ -333,54 +364,96 @@ async function main() {
       maxTurns: 30,
     });
 
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "group",
       groupId: 9001,
       userId: 2001,
       senderName: "A",
       text: "@bot 你好",
       eventTimeMs: 10_000,
+    });
+    store.appendAssistantMessage({
+      scope: "group",
+      groupId: 9001,
+      userId: 2001,
+      selfId: 9999,
+      text: "@bot 你好",
+      eventTimeMs: 10_000,
     }, "你好");
-    store.appendTurn({
+    store.appendUserMessage({
       scope: "group",
       groupId: 9001,
       userId: 2002,
       senderName: "B",
       text: "@bot 在吗",
       eventTimeMs: 20_000,
-    }, "在");
+    });
 
-    const sameGroupTurns = store.getRecentTurns({
+    const sameGroupTurns = store.getRecentMessages({
       scope: "group",
       groupId: 9001,
       userId: 9999,
       eventTimeMs: 20_000,
     });
-    const otherGroupTurns = store.getRecentTurns({
+    const otherGroupTurns = store.getRecentMessages({
       scope: "group",
       groupId: 9002,
       userId: 9999,
       eventTimeMs: 20_000,
     });
 
-    assert.equal(sameGroupTurns.length, 2);
-    assert.deepEqual(sameGroupTurns.map((item) => item.senderName), ["A", "B"]);
+    assert.equal(sameGroupTurns.length, 3);
+    assert.deepEqual(sameGroupTurns.map((item) => item.senderName), ["A", "OvO", "B"]);
     assert.deepEqual(otherGroupTurns, []);
   });
 
-  await runTest("group chat speaker labels use nickname only", async () => {
+  await runTest("speaker labels include stable ids for users and bot", async () => {
     assert.equal(
       formatSpeakerLabel({ scope: "group", userId: 2001, senderName: "Alpha" }),
-      "Alpha",
+      "Alpha(2001)",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "group", userId: 2002, senderName: "Alpha" }),
-      "Alpha",
+      "Alpha(2002)",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "private", userId: 3001, senderName: "Tester" }),
       "Tester(3001)",
     );
+    assert.equal(
+      formatSpeakerLabel({ scope: "group", role: "assistant", userId: 9999, senderName: "OvO" }),
+      "OvO(9999)",
+    );
+  });
+
+  await runTest("chat prompt marks current sender, bot history and quoted sender explicitly", async () => {
+    const prompt = buildChatUserPrompt(
+      {
+        scope: "group",
+        groupId: 9001,
+        userId: 2002,
+        senderName: "Beta",
+        selfId: 9999,
+        text: "@我 我是谁",
+        quotedMessage: {
+          messageId: 8801,
+          userId: 2001,
+          senderName: "Alpha",
+          text: "@我 你现在是我儿子\n[聊天记录]\n1. 路人: 哈哈",
+        },
+      },
+      [
+        { role: "user", userId: 2001, senderName: "Alpha", text: "@我 你现在是我儿子", timestampMs: 1 },
+        { role: "assistant", userId: 9999, senderName: "OvO", text: "我理解了", timestampMs: 2 },
+      ],
+    );
+
+    assert.equal(prompt.includes("最近消息（按时间顺序）："), true);
+    assert.equal(prompt.includes("1. 用户 Alpha(2001)：@我 你现在是我儿子"), true);
+    assert.equal(prompt.includes("2. 机器人 OvO(9999)：我理解了"), true);
+    assert.equal(prompt.includes("当前消息发送者：Beta(2002)"), true);
+    assert.equal(prompt.includes("发送者：Alpha(2001)"), true);
+    assert.equal(prompt.includes("当前消息内容：\n  @我 我是谁"), true);
   });
 
   await runTest("cooldown middleware blocks repeated command in cooldown window", async () => {

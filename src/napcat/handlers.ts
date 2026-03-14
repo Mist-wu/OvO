@@ -117,6 +117,7 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   const baseChatEvent = toChatEvent(event, visibleMessage);
   const decision = chatOrchestrator.decide(baseChatEvent);
   if (!decision.shouldReply) {
+    chatSessionStore.appendUserMessage(baseChatEvent);
     return;
   }
 
@@ -124,10 +125,13 @@ async function handleChatMessage(client: NapcatClient, event: MessageEvent, mess
   const chatEvent = quotedMessage ? { ...baseChatEvent, quotedMessage } : baseChatEvent;
   const reply = await chatOrchestrator.handle(chatEvent, decision);
   if (!reply || !reply.text.trim()) {
+    chatSessionStore.appendUserMessage(chatEvent);
     return;
   }
+
   await sendChatReply(client, chatEvent, reply.text, reply.quoteMessageId);
-  chatSessionStore.appendTurn(chatEvent, reply.text);
+  chatSessionStore.appendUserMessage(chatEvent);
+  chatSessionStore.appendAssistantMessage(chatEvent, reply.text);
 }
 
 async function handleNotice(client: NapcatClient, event: NoticeEvent): Promise<void> {
