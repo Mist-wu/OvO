@@ -398,21 +398,16 @@ async function sendChatReply(
   quoteMessageId?: number | string,
 ): Promise<void> {
   if (event.scope === "group" && typeof event.groupId === "number") {
-    const mentionMessage =
-      Number.isFinite(event.userId)
-        ? buildMessage(atSegment(event.userId), textSegment(" "))
-        : [];
-
     if (quoteMessageId !== undefined) {
       await client.sendMessage({
         groupId: event.groupId,
-        message: buildMessage(replySegment(quoteMessageId), mentionMessage, textSegment(text)),
+        message: buildMessage(replySegment(quoteMessageId), textSegment(text)),
       });
       return;
     }
     await client.sendMessage({
       groupId: event.groupId,
-      message: buildMessage(mentionMessage, textSegment(text)),
+      message: text,
     });
     return;
   }

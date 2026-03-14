@@ -1151,7 +1151,7 @@ async function main() {
           messageToText(item.params.message).length > 0,
       );
       assert.equal(messageToText(action.params.message).length > 0, true);
-      assert.equal(messageHasAt(action.params.message, 33339), true);
+      assert.equal(messageHasAt(action.params.message, 33339), false);
     });
 
     await runTest("group plain text without trigger stays silent", async () => {

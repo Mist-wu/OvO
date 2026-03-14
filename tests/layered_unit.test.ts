@@ -27,9 +27,10 @@ import { ExternalCallError, runExternalCall } from "../src/utils/external_call";
 import { ConfigStore } from "../src/storage/config_store";
 import { configStore } from "../src/storage/config_store";
 import { cooldownMiddleware } from "../src/napcat/commands/middleware";
-import { parseRawCqMessage } from "../src/napcat/message_utils";
+import { parseRawCqMessage, summarizeMessageSegments } from "../src/napcat/message_utils";
 import { buildChatUserPrompt, formatSpeakerLabel } from "../src/chat/orchestrator";
 import { ChatSessionStore } from "../src/chat/session";
+import { sanitizeReply } from "../src/chat/safety";
 import {
   buildGeminiGenerateContentConfig,
   extractGeminiGroundingMetadataFromResponse,
@@ -431,12 +432,30 @@ async function main() {
     );
   });
 
-  await runTest("cq summary masks mentioned qq ids in chat context", async () => {
-    const parsed = parseRawCqMessage("[CQ:at,qq=2402547624] 你是谁");
-    assert.equal(parsed.summary, "@成员 你是谁");
+  await runTest("cq summary removes mentions and emoji placeholders from chat context", async () => {
+    const parsed = parseRawCqMessage("[CQ:at,qq=2402547624] 你是谁 [CQ:face,id=14]");
+    assert.equal(parsed.summary, "你是谁");
 
     const selfMention = parseRawCqMessage("[CQ:at,qq=9999] 在吗", { selfId: 9999 });
     assert.equal(selfMention.summary, "在吗");
+  });
+
+  await runTest("segment summary removes reply mention and emoji artifacts", async () => {
+    const summary = summarizeMessageSegments(
+      [
+        { type: "reply", data: { id: 7 } },
+        { type: "at", data: { qq: 9999 } },
+        { type: "text", data: { text: " 在吗 " } },
+        { type: "face", data: { id: 14 } },
+      ],
+      { skipReply: true, includeForwardPlaceholder: true, selfId: 9999 },
+    );
+    assert.equal(summary, "在吗");
+  });
+
+  await runTest("sanitizeReply strips outgoing mentions and emoji placeholders", async () => {
+    const sanitized = sanitizeReply("@OvO 我是@Destin. 爷爷 @成员 [表情]");
+    assert.equal(sanitized, "我是 爷爷");
   });
 
   await runTest("chat prompt marks current sender, bot history and quoted sender explicitly", async () => {
