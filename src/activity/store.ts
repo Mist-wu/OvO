@@ -147,7 +147,7 @@ type UserPointsSnapshot = {
 };
 
 const CURRENT_VERSION = 1;
-const STORE_PATH = path.resolve(process.cwd(), "data/activity_stats.json");
+const STORE_PATH = process.env.ACTIVITY_STORE_PATH?.trim() || path.resolve(process.cwd(), "data/activity_stats.json");
 const EMOJI_ASSET_DIR = path.resolve(process.cwd(), "data/emoji_assets");
 const MAX_DAILY_BUCKETS = 35;
 const emojiHttpDownloadTasks: Map<string, Promise<string | undefined>> = new Map();

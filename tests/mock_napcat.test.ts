@@ -393,6 +393,7 @@ async function main() {
   process.env.NAPCAT_ACTION_RETRY_MAX_DELAY_MS = "1500";
   process.env.SCHEDULE_INTERVAL_MS = "600000";
   process.env.BOT_CONFIG_PATH = path.join(tmpDir, "config.json");
+  process.env.ACTIVITY_STORE_PATH = path.join(tmpDir, "activity_stats.json");
   process.env.ROOT_USER_ID = "11111";
   process.env.COMMAND_COOLDOWN_MS = "0";
   process.env.GEMINI_API_KEY = "";
