@@ -20,13 +20,14 @@ import {
   type OneBotEvent,
   type RequestEvent,
 } from "./commands/types";
-import { at as atSegment, buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
+import { buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
 import {
   extractSegmentsFromUnknownMessage,
   getForwardSegmentId,
   getReplySegmentId,
   getSenderNameFromUnknown,
   parseRawCqMessage,
+  summarizeMessageSegments,
 } from "./message_utils";
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
@@ -221,7 +222,7 @@ function extractTextFromSegments(segments: MessageSegment[]): string {
 
 function getChatVisibleText(event: MessageEvent): string {
   if (Array.isArray(event.message)) {
-    const summary = summarizeSegments(event.message, {
+    const summary = summarizeMessageSegments(event.message, {
       skipReply: true,
       includeForwardPlaceholder: true,
       selfId: event.self_id,
@@ -266,102 +267,6 @@ function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function formatAtSummary(
-  qq: unknown,
-  options?: { selfId?: number | string },
-): string {
-  if (qq === "all") return "@全体成员";
-  if (typeof qq !== "number" && typeof qq !== "string") return "@成员";
-  const qqText = String(qq).trim();
-  if (!qqText) return "@成员";
-  const selfIdText =
-    typeof options?.selfId === "number" || typeof options?.selfId === "string"
-      ? String(options.selfId)
-      : "";
-  if (selfIdText && qqText === selfIdText) {
-    return "@我";
-  }
-  return "@成员";
-}
-
-function summarizeQuotedSegments(segments: MessageSegment[]): string {
-  return summarizeSegments(segments, {
-    skipReply: true,
-    includeForwardPlaceholder: true,
-  });
-}
-
-function summarizeSegments(
-  segments: MessageSegment[],
-  options?: { skipReply?: boolean; includeForwardPlaceholder?: boolean; selfId?: number | string },
-): string {
-  const parts: string[] = [];
-  for (const segment of segments) {
-    if (segment.type === "text") {
-      const text = segment.data?.text;
-      if (typeof text === "string" && text.trim()) {
-        parts.push(text.trim());
-      }
-      continue;
-    }
-
-    if (segment.type === "image") {
-      parts.push("[图片]");
-      continue;
-    }
-
-    if (segment.type === "face" || segment.type === "mface") {
-      parts.push("[表情]");
-      continue;
-    }
-
-    if (segment.type === "at") {
-      parts.push(formatAtSummary(segment.data?.qq, { selfId: options?.selfId }));
-      continue;
-    }
-
-    if (segment.type === "reply") {
-      if (options?.skipReply) {
-        continue;
-      }
-      parts.push("[引用]");
-      continue;
-    }
-
-    if (segment.type === "forward") {
-      parts.push(options?.includeForwardPlaceholder ? "[聊天记录]" : "[forward]");
-      continue;
-    }
-
-    if (segment.type === "node") {
-      const nodeSummary = summarizeForwardNode(segment.data);
-      parts.push(nodeSummary || "[聊天记录节点]");
-      continue;
-    }
-
-    parts.push(`[${segment.type}]`);
-  }
-  return normalizeWhitespace(parts.join(" "));
-}
-
-function summarizeForwardNode(data: Record<string, unknown> | undefined): string {
-  if (!data) return "";
-  const nickname =
-    typeof data.nickname === "string" && data.nickname.trim() ? data.nickname.trim() : undefined;
-
-  const content =
-    summarizeSegments(extractSegmentsFromUnknownMessage(data.content ?? data.message), {
-      skipReply: true,
-      includeForwardPlaceholder: true,
-    }) ||
-    (typeof data.content === "string" ? normalizeWhitespace(data.content) : "");
-
-  if (!content) {
-    return nickname ? `${nickname}: [聊天记录节点]` : "[聊天记录节点]";
-  }
-  return nickname ? `${nickname}: ${content}` : content;
-}
-
 function extractForwardNodes(data: GetForwardMsgData | undefined): GetForwardMsgNode[] {
   if (Array.isArray(data)) return data as GetForwardMsgNode[];
   if (!data || typeof data !== "object") return [];
@@ -382,7 +287,7 @@ function summarizeForwardNodes(nodes: GetForwardMsgNode[]): string {
       (typeof sourceRecord.name === "string" && sourceRecord.name.trim()) ||
       "";
     const contentSummary =
-      summarizeSegments(extractSegmentsFromUnknownMessage(sourceRecord.content ?? sourceRecord.message), {
+      summarizeMessageSegments(extractSegmentsFromUnknownMessage(sourceRecord.content ?? sourceRecord.message), {
         skipReply: true,
         includeForwardPlaceholder: true,
       }) ||
@@ -433,7 +338,10 @@ async function resolveQuotedMessage(
       quotedSegments = parsedRawMessage.segments;
     }
 
-    const summaryFromSegments = summarizeQuotedSegments(quotedSegments);
+    const summaryFromSegments = summarizeMessageSegments(quotedSegments, {
+      skipReply: true,
+      includeForwardPlaceholder: true,
+    });
     const forwardSummary = await resolveForwardSummary(client, quotedSegments);
     const text =
       [summaryFromSegments, forwardSummary].filter(Boolean).join("\n") ||

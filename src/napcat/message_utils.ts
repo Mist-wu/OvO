@@ -1,5 +1,11 @@
 import type { MessageSegment } from "./message";
 
+type SegmentSummaryOptions = {
+  skipReply?: boolean;
+  includeForwardPlaceholder?: boolean;
+  selfId?: number | string;
+};
+
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -8,10 +14,10 @@ function formatAtSummary(
   qq: unknown,
   options?: { selfId?: number | string },
 ): string {
-  if (qq === "all") return "@全体成员";
-  if (typeof qq !== "number" && typeof qq !== "string") return "@成员";
+  if (qq === "all") return "";
+  if (typeof qq !== "number" && typeof qq !== "string") return "";
   const qqText = String(qq).trim();
-  if (!qqText) return "@成员";
+  if (!qqText) return "";
   const selfIdText =
     typeof options?.selfId === "number" || typeof options?.selfId === "string"
       ? String(options.selfId)
@@ -19,7 +25,7 @@ function formatAtSummary(
   if (selfIdText && qqText === selfIdText) {
     return "";
   }
-  return "@成员";
+  return "";
 }
 
 export function parseCqParams(raw: string | undefined): Record<string, string> {
@@ -38,13 +44,17 @@ export function parseRawCqMessage(
   options?: { selfId?: number | string },
 ): { summary: string; segments: MessageSegment[] } {
   const regex = /\[CQ:([a-zA-Z0-9_]+)(?:,([^\]]+))?\]/g;
-  const summaryParts: string[] = [];
   const segments: MessageSegment[] = [];
   let cursor = 0;
 
   const pushText = (text: string) => {
     const normalized = normalizeWhitespace(text);
-    if (normalized) summaryParts.push(normalized);
+    if (normalized) {
+      segments.push({
+        type: "text",
+        data: { text: normalized },
+      });
+    }
   };
 
   for (const match of raw.matchAll(regex)) {
@@ -60,25 +70,24 @@ export function parseRawCqMessage(
     switch (type) {
       case "image": {
         const imageRef = params.url || params.file || params.path;
-        if (imageRef) {
-          segments.push({
-            type: "image",
-            data: {
-              url: params.url ?? "",
-              file: params.file ?? imageRef,
-              path: params.path ?? "",
-            },
-          });
-        }
-        summaryParts.push("[图片]");
+        segments.push({
+          type: "image",
+          data: {
+            url: params.url ?? "",
+            file: params.file ?? imageRef ?? "",
+            path: params.path ?? "",
+          },
+        });
         break;
       }
       case "face":
       case "mface":
-        summaryParts.push("[表情]");
+        segments.push({
+          type,
+          data: params as Record<string, unknown>,
+        });
         break;
       case "at":
-        summaryParts.push(formatAtSummary(params.qq, options));
         segments.push({
           type: "at",
           data: params as Record<string, unknown>,
@@ -95,7 +104,6 @@ export function parseRawCqMessage(
           type,
           data: params as Record<string, unknown>,
         });
-        summaryParts.push(`[${type}]`);
         break;
     }
 
@@ -107,13 +115,84 @@ export function parseRawCqMessage(
   }
 
   return {
-    summary: normalizeWhitespace(summaryParts.join(" ")),
+    summary: summarizeMessageSegments(segments, { skipReply: true, selfId: options?.selfId }),
     segments,
   };
 }
 
+export function summarizeMessageSegments(
+  segments: MessageSegment[],
+  options?: SegmentSummaryOptions,
+): string {
+  const parts: string[] = [];
+
+  for (const segment of segments) {
+    if (segment.type === "text") {
+      const text = segment.data?.text;
+      if (typeof text === "string" && text.trim()) {
+        parts.push(text.trim());
+      }
+      continue;
+    }
+
+    if (segment.type === "image") {
+      parts.push("[图片]");
+      continue;
+    }
+
+    if (segment.type === "face" || segment.type === "mface") {
+      continue;
+    }
+
+    if (segment.type === "at") {
+      parts.push(formatAtSummary(segment.data?.qq, { selfId: options?.selfId }));
+      continue;
+    }
+
+    if (segment.type === "reply") {
+      if (!options?.skipReply) {
+        parts.push("[引用]");
+      }
+      continue;
+    }
+
+    if (segment.type === "forward") {
+      parts.push(options?.includeForwardPlaceholder ? "[聊天记录]" : "[forward]");
+      continue;
+    }
+
+    if (segment.type === "node") {
+      parts.push(summarizeForwardNode(segment.data) || "[聊天记录节点]");
+      continue;
+    }
+
+    parts.push(`[${segment.type}]`);
+  }
+
+  return normalizeWhitespace(parts.join(" "));
+}
+
 export function parseRawCqSegments(raw: string): MessageSegment[] {
   return parseRawCqMessage(raw).segments;
+}
+
+function summarizeForwardNode(data: Record<string, unknown> | undefined): string {
+  if (!data) return "";
+
+  const nickname =
+    typeof data.nickname === "string" && data.nickname.trim() ? data.nickname.trim() : undefined;
+  const content =
+    summarizeMessageSegments(extractSegmentsFromUnknownMessage(data.content ?? data.message), {
+      skipReply: true,
+      includeForwardPlaceholder: true,
+    }) ||
+    (typeof data.content === "string" ? normalizeWhitespace(data.content) : "");
+
+  if (!content) {
+    return nickname ? `${nickname}: [聊天记录节点]` : "[聊天记录节点]";
+  }
+
+  return nickname ? `${nickname}: ${content}` : content;
 }
 
 export function extractSegmentsFromUnknownMessage(message: unknown): MessageSegment[] {
@@ -126,7 +205,7 @@ export function extractSegmentsFromUnknownMessage(message: unknown): MessageSegm
   }
 
   if (typeof message === "string") {
-    return parseRawCqSegments(message);
+    return parseRawCqMessage(message).segments;
   }
 
   return [];
