@@ -40,6 +40,10 @@ export function text(value: string): TextSegment {
   return { type: "text", data: { text: value } };
 }
 
+export function at(qq: number | "all"): AtSegment {
+  return { type: "at", data: { qq } };
+}
+
 export function reply(id: number | string): ReplySegment {
   return { type: "reply", data: { id } };
 }

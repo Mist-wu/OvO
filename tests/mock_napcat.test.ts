@@ -311,6 +311,16 @@ function messageHasImage(message: unknown): boolean {
   });
 }
 
+function messageHasAt(message: unknown, qq: number): boolean {
+  if (!Array.isArray(message)) return false;
+  return message.some((segment) => {
+    if (!segment || typeof segment !== "object") return false;
+    if ((segment as { type?: unknown }).type !== "at") return false;
+    const target = (segment as { data?: { qq?: unknown } }).data?.qq;
+    return target === qq;
+  });
+}
+
 function messageFirstImageFile(message: unknown): string {
   if (!Array.isArray(message)) return "";
   for (const segment of message) {
@@ -1140,6 +1150,7 @@ async function main() {
           messageToText(item.params.message).length > 0,
       );
       assert.equal(messageToText(action.params.message).length > 0, true);
+      assert.equal(messageHasAt(action.params.message, 33339), true);
     });
 
     await runTest("group plain text without trigger stays silent", async () => {

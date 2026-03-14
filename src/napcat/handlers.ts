@@ -20,7 +20,7 @@ import {
   type OneBotEvent,
   type RequestEvent,
 } from "./commands/types";
-import { buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
+import { at as atSegment, buildMessage, reply as replySegment, text as textSegment, type MessageSegment } from "./message";
 
 export async function handleEvent(client: NapcatClient, event: OneBotEvent): Promise<void> {
   if (isMessageEvent(event)) {
@@ -614,14 +614,22 @@ async function sendChatReply(
   quoteMessageId?: number | string,
 ): Promise<void> {
   if (event.scope === "group" && typeof event.groupId === "number") {
+    const mentionMessage =
+      Number.isFinite(event.userId)
+        ? buildMessage(atSegment(event.userId), textSegment(" "))
+        : [];
+
     if (quoteMessageId !== undefined) {
       await client.sendMessage({
         groupId: event.groupId,
-        message: buildMessage(replySegment(quoteMessageId), textSegment(text)),
+        message: buildMessage(replySegment(quoteMessageId), mentionMessage, textSegment(text)),
       });
       return;
     }
-    await client.sendGroupText(event.groupId, text);
+    await client.sendMessage({
+      groupId: event.groupId,
+      message: buildMessage(mentionMessage, textSegment(text)),
+    });
     return;
   }
   await client.sendPrivateText(event.userId, text);

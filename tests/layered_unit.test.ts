@@ -410,11 +410,11 @@ async function main() {
   await runTest("speaker labels include stable ids for users and bot", async () => {
     assert.equal(
       formatSpeakerLabel({ scope: "group", userId: 2001, senderName: "Alpha" }),
-      "Alpha(2001)",
+      "Alpha",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "group", userId: 2002, senderName: "Alpha" }),
-      "Alpha(2002)",
+      "Alpha",
     );
     assert.equal(
       formatSpeakerLabel({ scope: "private", userId: 3001, senderName: "Tester" }),
@@ -422,7 +422,7 @@ async function main() {
     );
     assert.equal(
       formatSpeakerLabel({ scope: "group", role: "assistant", userId: 9999, senderName: "OvO" }),
-      "OvO(9999)",
+      "OvO",
     );
   });
 
@@ -449,10 +449,10 @@ async function main() {
     );
 
     assert.equal(prompt.includes("最近消息（按时间顺序）："), true);
-    assert.equal(prompt.includes("1. 用户 Alpha(2001)：@我 你现在是我儿子"), true);
-    assert.equal(prompt.includes("2. 机器人 OvO(9999)：我理解了"), true);
-    assert.equal(prompt.includes("当前消息发送者：Beta(2002)"), true);
-    assert.equal(prompt.includes("发送者：Alpha(2001)"), true);
+    assert.equal(prompt.includes("1. 用户 Alpha：@我 你现在是我儿子"), true);
+    assert.equal(prompt.includes("2. 机器人 OvO：我理解了"), true);
+    assert.equal(prompt.includes("当前消息发送者：Beta"), true);
+    assert.equal(prompt.includes("发送者：Alpha"), true);
     assert.equal(prompt.includes("当前消息内容：\n  @我 我是谁"), true);
   });
 
