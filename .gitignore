@@ -6,7 +6,6 @@ dist/
 .DS_Store
 logs/
 data/
-context/
 me_doc/
 Maibot_compare.md
 tmp/
