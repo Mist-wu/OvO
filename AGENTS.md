@@ -13,9 +13,6 @@
 - NapCat API: `context/napcat_api.md` (when writing NapCat adapters, consult this doc proactively)
 - Gemini API codegen instructions: `https://raw.githubusercontent.com/googleapis/js-genai/main/codegen_instructions.md`
 
-## NapCat 适配策略
-- 以 OneBot v11 事件/动作字段为准，优先查 `context/napcat_api.md`，不要凭记忆硬编码字段名。
-
 ## Run
 1. `pnpm install`
 2. copy `.env.example` -> `.env` and fill values
