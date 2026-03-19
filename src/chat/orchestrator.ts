@@ -9,7 +9,7 @@ type PreparedChatReply = {
   reply: ChatReply;
 };
 
-interface ChatOrchestrator {
+type ChatOrchestrator = {
   decide(event: ChatEvent): TriggerDecision;
   prepare(
     event: ChatEvent,
@@ -18,7 +18,7 @@ interface ChatOrchestrator {
   ): Promise<PreparedChatReply | null>;
   commit(): void;
   handle(event: ChatEvent, decision?: TriggerDecision): Promise<ChatReply | null>;
-}
+};
 
 class MinimalChatOrchestrator implements ChatOrchestrator {
   decide(event: ChatEvent): TriggerDecision {
